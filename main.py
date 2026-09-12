@@ -687,6 +687,7 @@ def main(argv=None):
 
     raw_rows = len(frame)
     frame = frame[(frame["mentee_email"] != "") | (frame["full_name"] != "")]
+    frame = frame[frame[email_column].astype(str).str.strip() != email_column]
     frame = frame[~frame.index.isin(
         frame[frame["mentee_email"] != ""].sort_values(timestamp_column, kind="stable")
         .duplicated("mentee_email", keep="last").pipe(lambda d: d[d].index)
