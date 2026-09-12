@@ -167,6 +167,14 @@ def check_teammate_outside_past_cluster_is_not_pinned():
     assert unseated == [100]
 
 
+def check_mentee_level():
+    levels = {"a@x.net": "Experienced"}
+    assert main.mentee_level("a@x.net", 3.0, levels) == "Experienced"
+    assert main.mentee_level("b@x.net", 1.0, levels) == "Novice"
+    assert main.mentee_level("b@x.net", 2.0, levels) == ""
+    assert main.load_levels(main.LEVELS_XLSX) or not main.LEVELS_XLSX.exists()
+
+
 def check_seeded_mentors_capped_by_cluster_size():
     mentors = people([(f"A{i}", "A", 4.0, "PMBS", "Project Management Events") for i in range(4)])
     mentors.index = [100, 101, 102, 103]
@@ -192,4 +200,5 @@ if __name__ == "__main__":
     check_seeded_mentors_capped_by_cluster_size()
     check_past_events_lookup()
     check_teammate_outside_past_cluster_is_not_pinned()
+    check_mentee_level()
     print("All checks passed.")

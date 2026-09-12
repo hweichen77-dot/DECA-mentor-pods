@@ -82,6 +82,7 @@ The end of a run prints these lists, all worth chasing before competition.
 - Mentors matched to last year's data by name rather than address, and mentors with no past record at all.
 - Mentors whose teammate is sorted without them, because the cluster is too small for another pod or because the mentor has not competed in that cluster.
 - Teammates named by somebody but matching no response, usually a misspelled address or a student who never filled the form in.
+- Returning mentees with no row in the level sheet.
 - Pods carrying more than one written event, pods whose mentor has not competed in that cluster, pods where a mentee has more years in DECA than the mentor, and mentors left without a pod.
 
 ## Known limits
@@ -97,7 +98,7 @@ pip install pandas openpyxl
 python main.py
 ```
 
-The script reads `MentorAndMenteeResponses.csv`, `PreviousYearRegistrationData.csv` and `WrittenEventClusters.xlsx` from its own folder, writes `MentorPodSorting.xlsx` beside it, and opens the spreadsheet. Pass `--no-open` to skip that last step.
+The script reads `MentorAndMenteeResponses.csv`, `PreviousYearRegistrationData.csv`, `WrittenEventClusters.xlsx` and `ExpectedExperiencedNoviceMentee.xlsx` from its own folder, writes `MentorPodSorting.xlsx` and `MentorPodAttendance.xlsx` beside it, and opens the pod spreadsheet. Pass `--no-open` to skip that last step.
 
 The export needs an "Are you a mentor?" column and, to skip co-presidents, an "Are you a Co-President?" column, both answered Yes or No. Blank rows, repeated header rows and repeat submissions from one address are dropped before sorting, and the run prints how many.
 
@@ -120,10 +121,22 @@ One row per mentee, sorted by pod.
 | Years in DECA, Email, Timestamp | Carried straight through from the form |
 | Mentor's Teammate | Yes when this mentee is the mentor's own written event teammate |
 
+### The attendance sheet
+
+`MentorPodAttendance.xlsx` is the same mentees in the layout the analytics team's attendance tracker expects, columns A through H, ready to paste in.
+
+| Column | Meaning |
+| --- | --- |
+| Mentor Pod # | Pod number |
+| Mentor Name(s) | Mentor first and last name |
+| Email, First Name, Last Name, Event | The mentee, carried from the pod sheet |
+| Status | Always Compete |
+| Level | Novice or Experienced from `ExpectedExperiencedNoviceMentee.xlsx`, matched by address. First years missing from that sheet are Novice. A returning member missing from it gets a blank and the run prints the name |
+
 ## A note on the data in this repository
 
 `MentorAndMenteeResponses.csv` is generated sample data. The real form carried student names and school email addresses, which are not published here.
 
 The sample export keeps the same shape as the real one. It has the same 208 responses, the same 33 mentors, the same spread of Year in DECA answers, the same event mix across all five written branches, and the same team sizes. The messy parts were kept as well, including partners who named each other while picking different events, partners who are mentors, misspelled email domains, and names entered in a different order than the roster has them. Two mentors are marked as co-presidents so that path runs on the sample too.
 
-`PreviousYearRegistrationData.csv` is the real prior year export, kept here so the next team can run the sorter without hunting for it. Because the sample responses use generated names and addresses, none of the sample mentors match it, so a run on the sample places every mentor as having no past record. Drop in the real current year export and the lookup matches.
+`ExpectedExperiencedNoviceMentee.xlsx` is the real level sheet for returning members. `PreviousYearRegistrationData.csv` is the real prior year export, kept here so the next team can run the sorter without hunting for it. Because the sample responses use generated names and addresses, none of the sample mentors match it, so a run on the sample places every mentor as having no past record. Drop in the real current year export and the lookup matches.

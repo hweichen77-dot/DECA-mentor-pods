@@ -11,7 +11,11 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 INPUT_CSV = SCRIPT_DIR / "MentorAndMenteeResponses.csv"
 CLUSTER_XLSX = SCRIPT_DIR / "WrittenEventClusters.xlsx"
 PAST_CSV = SCRIPT_DIR / "PreviousYearRegistrationData.csv"
+LEVELS_XLSX = SCRIPT_DIR / "ExpectedExperiencedNoviceMentee.xlsx"
 OUTPUT_XLSX = SCRIPT_DIR / "MentorPodSorting.xlsx"
+ATTENDANCE_XLSX = SCRIPT_DIR / "MentorPodAttendance.xlsx"
+ATTENDANCE_COLUMNS = ["Mentor Pod #", "Mentor Name(s)", "Email", "First Name", "Last Name", "Event", "Status", "Level"]
+ATTENDANCE_STATUS = "Compete"
 
 SOFT_SIZE = 6
 HARD_SIZE = 7
@@ -220,6 +224,27 @@ def load_past_events(path):
     frame = pd.read_csv(path)
     frame.columns = frame.columns.str.strip()
     return past_events_from_frame(frame)
+
+
+def load_levels(path):
+    if not path.exists():
+        return {}
+    sheet = pd.read_excel(path)
+    email_column = find_column(sheet.columns, "email", default="Email")
+    level_column = find_column(sheet.columns, "level", default="Level")
+    levels = {}
+    for email, level in zip(sheet[email_column].map(normalize_email), sheet[level_column]):
+        if email and isinstance(level, str) and level.strip():
+            levels[email] = level.strip()
+    return levels
+
+
+def mentee_level(email, years, levels):
+    if email in levels:
+        return levels[email]
+    if years == 1:
+        return "Novice"
+    return ""
 
 
 def past_events_for(row, by_email, by_name):
@@ -780,6 +805,30 @@ def main(argv=None):
 
     result.to_excel(OUTPUT_XLSX, index=False, engine="openpyxl")
     print(f"Wrote {len(result)} rows to {OUTPUT_XLSX}")
+
+    levels = load_levels(LEVELS_XLSX)
+    if not levels:
+        print(f"No level sheet at {LEVELS_XLSX.name}, so Level is blank except first years.")
+    attendance = pd.DataFrame({
+        "Mentor Pod #": result["Pod"],
+        "Mentor Name(s)": (result["Mentor First Name"].astype(str) + " " + result["Mentor Last Name"].astype(str)).str.strip(),
+        "Email": result["Email"],
+        "First Name": result["Mentee First Name"],
+        "Last Name": result["Mentee Last Name"],
+        "Event": result["Event"],
+        "Status": ATTENDANCE_STATUS,
+        "Level": [
+            mentee_level(normalize_email(email), years, levels)
+            for email, years in zip(result["Email"], result["Years in DECA"].map(parse_years_in_deca))
+        ],
+    })[ATTENDANCE_COLUMNS]
+    no_level = attendance[attendance["Level"] == ""]
+    if len(no_level):
+        print(f"Returning mentees missing from {LEVELS_XLSX.name}, Level left blank: {len(no_level)}")
+        for _, row in no_level.iterrows():
+            print(f"  {row['Last Name']}, {row['First Name']} {row['Email']}")
+    attendance.to_excel(ATTENDANCE_XLSX, index=False, engine="openpyxl")
+    print(f"Wrote {len(attendance)} rows to {ATTENDANCE_XLSX}")
     if "--no-open" not in argv:
         open_when_possible(OUTPUT_XLSX)
 
