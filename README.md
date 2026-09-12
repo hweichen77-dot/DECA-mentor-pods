@@ -54,6 +54,8 @@ Mentors only lead clusters they have competed in. `PreviousYearRegistrationData.
 
 The cluster membership lives in `WrittenEventClusters.xlsx`, one row per cluster with its events listed the way the form names them, matched on the code in parentheses. That file was built from the DECA high school competitive events list and covers events the form does not currently offer, so a new branch next season needs no code change.
 
+The analytics team tracks attendance in a sheet with eight fixed columns, so the run also writes `MentorPodAttendance.xlsx` in that layout. Each pod lists its mentor first with a blank Status, then the mentees marked Compete. Level comes from `ExpectedExperiencedNoviceMentee.xlsx` by address, and anyone missing from it is filled in from Year in DECA.
+
 ## How it works
 
 Mentees who named each other as written event teammates form a team, and a team is never split across pods. Matching runs on warriorlife addresses first and falls back to names, with the words sorted before comparison so "Kavya Wahlberg" and "Wahlberg, Kavya" reach the same person. Names are also checked against the local part of each address, which recovers people whose name field holds a typo. Two mentees only join up when they picked the same written event. Teammate answers on mentor rows are read as well, so a mentor who lists a mentee, or a mentee who lists a mentor, produces the same link.
