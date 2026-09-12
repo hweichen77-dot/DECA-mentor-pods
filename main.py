@@ -10,6 +10,7 @@ import pandas as pd
 SCRIPT_DIR = Path(__file__).resolve().parent
 INPUT_CSV = SCRIPT_DIR / "MentorAndMenteeResponses.csv"
 CLUSTER_XLSX = SCRIPT_DIR / "WrittenEventClusters.xlsx"
+PAST_CSV = SCRIPT_DIR / "PreviousYearRegistrationData.csv"
 OUTPUT_XLSX = SCRIPT_DIR / "MentorPodSorting.xlsx"
 
 SOFT_SIZE = 6
@@ -187,6 +188,48 @@ def cluster_of(event_code, category, lookup):
     return str(category).strip()
 
 
+def past_events_from_frame(frame):
+    columns = list(frame.columns)
+    email_column = find_column(columns, "email address", default="Email Address")
+    first_name_column = find_column(columns, "first name", default="First Name")
+    last_name_column = find_column(columns, "last name", default="Last Name")
+    category_column = find_column(columns, "select written event category")
+    if category_column is None:
+        raise KeyError("The past year export has no 'Select Written Event Category' column.")
+    written_columns = find_written_event_columns(columns, category_column)
+    category_to_column = map_categories_to_branch_columns(frame, category_column, written_columns)
+
+    by_email = defaultdict(set)
+    by_name = defaultdict(set)
+    for _, row in frame.iterrows():
+        event = resolve_written_event(row, category_column, written_columns, category_to_column)
+        if not event:
+            continue
+        email = normalize_email(row[email_column])
+        name_key = name_fingerprint(f"{row[first_name_column]} {row[last_name_column]}")
+        if email:
+            by_email[email].add(event)
+        if len(name_key) >= 2:
+            by_name[name_key].add(event)
+    return dict(by_email), dict(by_name)
+
+
+def load_past_events(path):
+    if not path.exists():
+        return {}, {}
+    frame = pd.read_csv(path)
+    frame.columns = frame.columns.str.strip()
+    return past_events_from_frame(frame)
+
+
+def past_events_for(row, by_email, by_name):
+    if row["mentee_email"] in by_email:
+        return sorted(by_email[row["mentee_email"]]), "email"
+    if row["mentee_name_key"] in by_name:
+        return sorted(by_name[row["mentee_name_key"]]), "name"
+    return [], ""
+
+
 def build_teams(mentees, mentors, everyone):
     index_by_email = {}
     index_by_name = {}
@@ -322,7 +365,7 @@ def rebalance(cluster_pods, mentees, mentors):
 def pod_events(pod, mentees, mentors):
     held = {mentees.at[member, "event_code"] for team in pod["pinned"] + pod["teams"] for member in team}
     if pod["mentor"] is not None:
-        held.add(mentors.at[pod["mentor"], "event_code"])
+        held.update(mentors.at[pod["mentor"], "past_codes"])
     return held
 
 
@@ -346,18 +389,21 @@ def place_team(team, candidate_pods, mentees, mentors, ideal):
     chosen["teams"].append(team)
 
 
-def build_pods(teams, mentees, mentors, mentor_links):
+def build_pods(teams, mentees, mentors, all_links):
     team_of = {member: team for team in teams for member in team}
     teams_by_cluster = defaultdict(list)
     for team in teams:
         teams_by_cluster[mentees.at[team[0], "cluster"]].append(team)
     clusters = sorted(cluster for cluster in teams_by_cluster if cluster)
 
+    mentor_links = {}
+    for mentor_index, linked in all_links.items():
+        eligible = {mentee for mentee in linked
+                    if mentees.at[mentee, "cluster"] == mentors.at[mentor_index, "cluster"]}
+        if eligible:
+            mentor_links[mentor_index] = eligible
+
     def mentor_cluster(mentor_index):
-        for mentee in sorted(mentor_links.get(mentor_index, ())):
-            cluster = mentees.at[mentee, "cluster"]
-            if cluster:
-                return cluster
         return mentors.at[mentor_index, "cluster"]
 
     def mentor_rank(mentor_index):
@@ -436,7 +482,7 @@ def build_pods(teams, mentees, mentors, mentor_links):
             pods.append(pod)
 
     leading = {pod["mentor"] for pod in pods if pod["mentor"] is not None}
-    unseated = sorted(unseated | {mentor for mentor in mentor_links if mentor not in leading})
+    unseated = sorted(unseated | {mentor for mentor in all_links if mentor not in leading or mentor not in mentor_links})
 
     for cluster in clusters:
         cluster_pods = [pod for pod in pods if pod["cluster"] == cluster]
@@ -568,6 +614,25 @@ def main(argv=None):
     mentors = frame[is_mentor & ~is_co_president].copy()
     mentees = frame[~is_mentor & ~is_co_president].copy()
 
+    past_by_email, past_by_name = load_past_events(PAST_CSV)
+    mentee_headcount = Counter(mentees["cluster"])
+    matched_how = []
+    past_names = []
+    past_codes = []
+    past_clusters = []
+    for _, row in mentors.iterrows():
+        events, how = past_events_for(row, past_by_email, past_by_name)
+        matched_how.append(how)
+        past_names.append("; ".join(events))
+        codes = [event_abbreviation(event) for event in events]
+        past_codes.append(frozenset(codes))
+        eligible = {cluster_of(code, "", cluster_lookup) for code in codes} - {""}
+        past_clusters.append(max(eligible, key=lambda cluster: (mentee_headcount[cluster], cluster)) if eligible else "")
+    mentors["past_matched"] = matched_how
+    mentors["past_events"] = past_names
+    mentors["past_codes"] = past_codes
+    mentors["cluster"] = past_clusters
+
     blank_events = int((frame["event_name"] == "").sum())
     print(f"Co-presidents skipped: {len(officers)}")
     for name in sorted(officers["full_name"]):
@@ -575,6 +640,18 @@ def main(argv=None):
     print(f"Mentors who answered Yes: {len(mentors)}")
     print(f"Mentees: {len(mentees)}")
     print(f"Responses with a written event: {len(frame) - blank_events}/{len(frame)}")
+    if past_by_email:
+        print(f"Past year data: {PAST_CSV.name}, {len(past_by_email)} people with a written event")
+        how = Counter(mentors["past_matched"])
+        print(f"Mentors matched to a past written event: {how.get('email', 0)} by email, {how.get('name', 0)} by name, {how.get('', 0)} unmatched")
+        for _, row in mentors[mentors["past_matched"] == "name"].iterrows():
+            print(f"  {row['full_name']} matched by name only, {row['mentee_email']} is not in the past year data")
+        for _, row in mentors[mentors["past_matched"] == ""].iterrows():
+            print(f"  {row['full_name']} has no past written event on record, so they can lead any cluster")
+    else:
+        print(f"No past year data at {PAST_CSV.name}, so mentors are placed by this year's written event.")
+        mentors["cluster"] = mentors["event_name"].map(lambda event: cluster_of(event_abbreviation(event), "", cluster_lookup))
+        mentors["past_codes"] = mentors["event_code"].map(lambda code: frozenset({code} - {""}))
     unknown_cluster = sorted(set(frame.loc[(frame["event_code"] != "") & (frame["cluster"] == ""), "event_name"]))
     if unknown_cluster:
         print(f"Written events with no cluster in the sheet or the form: {unknown_cluster}")
@@ -595,9 +672,9 @@ def main(argv=None):
     if mentor_links:
         pairs = sorted((mentors.at[m, "full_name"], mentees.at[mentee, "full_name"])
                        for m, linked in mentor_links.items() for mentee in linked)
-        print(f"Mentors whose written event teammate is a mentee, kept in the mentor's pod: {len(pairs)}")
+        print(f"Mentors whose written event teammate is a mentee: {len(pairs)}")
         for mentor_name, mentee_name in pairs:
-            print(f"  {mentor_name} mentors teammate {mentee_name}")
+            print(f"  {mentor_name} competes with {mentee_name}")
     if officer_partners:
         pairs = {(mentees.at[a, "full_name"], frame.at[b, "full_name"]) for a, b in officer_partners}
         print(f"Mentees whose written event teammate is a co-president, sorted on their own: {len(pairs)}")
@@ -611,7 +688,7 @@ def main(argv=None):
 
     pods, borrowed, idle_mentors, contested, unseated = build_pods(teams, mentees, mentors, mentor_links)
     if unseated:
-        print(f"Mentors whose cluster is too small for a pod of their own, teammate sorted without them: {len(unseated)}")
+        print(f"Mentors whose teammate is sorted without them, cluster too small or not one they have done: {len(unseated)}")
         for mentor in unseated:
             print(f"  {mentors.at[mentor, 'full_name']}")
     if contested:
@@ -639,12 +716,13 @@ def main(argv=None):
         pod_number = pod["number"]
         mentor_index = pod["mentor"]
         if mentor_index is None:
-            mentor_first = mentor_last = mentor_event = mentor_years = ""
+            mentor_first = mentor_last = mentor_event = mentor_years = mentor_past = ""
             mentorless.append(pod_number)
         else:
             mentor_first = mentors.at[mentor_index, "first_name"]
             mentor_last = mentors.at[mentor_index, "last_name"]
             mentor_event = mentors.at[mentor_index, "event_name"]
+            mentor_past = mentors.at[mentor_index, "past_events"]
             mentor_years = mentors.at[mentor_index, years_column]
             if mentors.at[mentor_index, "cluster"] not in ("", pod["cluster"]):
                 cross_cluster.append(pod_number)
@@ -659,6 +737,7 @@ def main(argv=None):
                 "Mentor Last Name": mentor_last,
                 "Mentor Year in DECA": mentor_years,
                 "Mentor Event": mentor_event,
+                "Mentor Past Event": mentor_past,
                 "Cluster": pod["cluster"],
                 "Event": person["event_name"],
                 "Mentee First Name": person["first_name"],
@@ -690,7 +769,7 @@ def main(argv=None):
             print(f"  pod {pod['number']} ({pod['cluster']}): "
                   + ", ".join(f"{code} x{count}" for code, count in spread.most_common()))
     if cross_cluster:
-        print(f"Pods whose mentor comes from a different cluster: {len(cross_cluster)} {cross_cluster}")
+        print(f"Pods whose mentor has not done that cluster before: {len(cross_cluster)} {cross_cluster}")
     if outranked:
         print(f"Pods where a mentee has more years in DECA than the mentor: {len(outranked)} {outranked}")
     if mentorless:

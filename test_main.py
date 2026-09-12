@@ -78,6 +78,7 @@ def people(rows):
     frame["email_name_key"] = frame["mentee_email"].str.split("@").str[0].map(main.name_fingerprint)
     frame["partner_emails"] = [[] for _ in rows]
     frame["partner_names"] = [[] for _ in rows]
+    frame["past_codes"] = [frozenset({code} - {""}) for code in frame["event_code"]]
     return frame
 
 
@@ -128,6 +129,44 @@ def check_build_pods_borrows_spare_mentors():
     assert idle == [101]
 
 
+def check_past_events_lookup():
+    frame = pd.DataFrame({
+        "Email Address": ["Ana.A@warriorlife.net", "ben.b@warriorlife.net", "cal.c@warriorlife.net"],
+        "First Name": ["Ana", "Ben", "Cal"],
+        "Last Name": ["A", "B", "C"],
+        "Select Written Event Category": ["Entrepreneurship Events", "Business Operations Research Events", None],
+        "Select Written": [None, "Finance Operations (FOR)", None],
+        "Select Written.1": ["Innovation Plan (EIP)", None, None],
+    })
+    by_email, by_name = main.past_events_from_frame(frame)
+    assert by_email["ana.a@warriorlife.net"] == {"Innovation Plan (EIP)"}
+    assert "cal.c@warriorlife.net" not in by_email
+    row = {"mentee_email": "ana.a@warriorlife.net", "mentee_name_key": ("a", "ana")}
+    assert main.past_events_for(row, by_email, by_name) == (["Innovation Plan (EIP)"], "email")
+    row = {"mentee_email": "new.ben@warriorlife.net", "mentee_name_key": ("b", "ben")}
+    assert main.past_events_for(row, by_email, by_name) == (["Finance Operations (FOR)"], "name")
+    row = {"mentee_email": "nobody@warriorlife.net", "mentee_name_key": ("x", "y")}
+    assert main.past_events_for(row, by_email, by_name) == ([], "")
+
+
+def check_teammate_outside_past_cluster_is_not_pinned():
+    mentors = people([
+        ("Ana", "A", 4.0, "BOR", "Business Operations Research Events"),
+        ("Ben", "B", 4.0, "EIP", "Entrepreneurship Events"),
+    ])
+    mentors.index = [100, 101]
+    mentees = people(
+        [(f"M{i}", "E", 1.0, "EIP", "Entrepreneurship Events") for i in range(5)]
+        + [(f"M{i}", "B", 1.0, "BOR", "Business Operations Research Events") for i in range(5, 10)]
+    )
+    teams = [[i] for i in range(10)]
+    pods, borrowed, idle, contested, unseated = main.build_pods(teams, mentees, mentors, {100: {0}})
+    ana_pod = next(pod for pod in pods if pod["mentor"] == 100)
+    assert ana_pod["cluster"] == "Business Operations Research Events"
+    assert 0 not in ana_pod["members"] and ana_pod["seeded"] == []
+    assert unseated == [100]
+
+
 def check_seeded_mentors_capped_by_cluster_size():
     mentors = people([(f"A{i}", "A", 4.0, "PMBS", "Project Management Events") for i in range(4)])
     mentors.index = [100, 101, 102, 103]
@@ -151,4 +190,6 @@ if __name__ == "__main__":
     check_build_pods()
     check_build_pods_borrows_spare_mentors()
     check_seeded_mentors_capped_by_cluster_size()
+    check_past_events_lookup()
+    check_teammate_outside_past_cluster_is_not_pinned()
     print("All checks passed.")
