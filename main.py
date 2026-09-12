@@ -685,7 +685,18 @@ def main(argv=None):
     else:
         frame["partner_names"] = [[] for _ in range(len(frame))]
 
-    is_mentor = frame[mentor_flag_column].astype(str).str.strip().str.lower().isin({"yes", "y", "true"})
+    raw_rows = len(frame)
+    frame = frame[(frame["mentee_email"] != "") | (frame["full_name"] != "")]
+    frame = frame[~frame.index.isin(
+        frame[frame["mentee_email"] != ""].sort_values(timestamp_column, kind="stable")
+        .duplicated("mentee_email", keep="last").pipe(lambda d: d[d].index)
+    )]
+    if len(frame) != raw_rows:
+        print(f"Dropped {raw_rows - len(frame)} blank or repeat rows ({raw_rows} -> {len(frame)})")
+
+    mentor_answers = frame[mentor_flag_column].astype(str).str.strip().str.lower()
+    print("Mentor question answers:", dict(Counter(mentor_answers)))
+    is_mentor = mentor_answers.isin({"yes", "y", "true"})
     mentors = frame[is_mentor].copy()
     mentees = frame[~is_mentor].copy()
 
