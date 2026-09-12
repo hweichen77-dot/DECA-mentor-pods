@@ -1,25 +1,14 @@
-"""Self checks for the pod sorter.
-
-Run it with python test_main.py. Every check is an assert, so silence means the
-logic that the pod sorting depends on still behaves.
-"""
-
 import pandas as pd
 
 import main
 
 
 def check_name_matching():
-    """Two spellings of one person have to land on the same key, because the
-    form stores first and last name in separate columns while students type
-    teammates as one string and sometimes reverse the order."""
     assert main.name_fingerprint("Litian Gu") == main.name_fingerprint("gu,  LITIAN")
     assert main.name_fingerprint("Amber Chang") != main.name_fingerprint("Amber Chan")
 
 
 def check_partner_parsing():
-    """Teammate answers arrive separated by commas, newlines or plain spaces,
-    and a good number of them say some version of no partner."""
     two_emails = "Adithi.Jha@warriorlife.net Litian.Gu@warriorlife.net"
     assert main.split_partner_emails(two_emails) == [
         "adithi.jha@warriorlife.net",
@@ -42,16 +31,11 @@ def check_event_helpers():
 
 
 def check_mentor_column_is_not_the_roleplay_one():
-    """A loose keyword search for the word role matches Select Roleplay Category
-    first and turns every mentor into a mentee, so the match has to be exact."""
     headers = ["Timestamp", "Select Roleplay Category", "Are you a Mentor?"]
     assert main.find_mentor_flag_column(headers) == "Are you a Mentor?"
 
 
 def check_written_event_branches():
-    """The written event answer lives in whichever branch column matches the
-    category the student chose, even when an earlier branch still holds a
-    leftover answer from before they switched."""
     frame = pd.DataFrame({
         "Select Written Event Category": ["Alpha", "Alpha", "Beta", "Beta"],
         "Select Written": ["A one", "A two", "leftover", None],
@@ -67,79 +51,93 @@ def check_written_event_branches():
     assert picked == ["A one", "A two", "B one", "B two"]
 
 
-def check_pod_packing():
-    """Pods come out evenly sized, no team gets broken up, and nobody goes
-    missing along the way."""
-    solos = [[i] for i in range(20)]
-    pods = main.pack_teams_into_pods(solos)
-    assert sorted(len(pod) for pod in pods) == [6, 7, 7]
-
-    fifteen = [[i] for i in range(15)]
-    assert sorted(len(pod) for pod in main.pack_teams_into_pods(fifteen)) == [5, 5, 5]
-
-    ten = [[0, 1, 2], [3, 4, 5], [6, 7], [8], [9]]
-    pods = main.pack_teams_into_pods(ten)
-    assert sorted(len(pod) for pod in pods) == [5, 5]
-    for team in ten:
-        holder = [pod for pod in pods if team[0] in pod]
-        assert len(holder) == 1 and set(team) <= set(holder[0])
-
-    everyone = sorted(person for pod in pods for person in pod)
-    assert everyone == list(range(10))
-
-    assert main.pack_teams_into_pods([]) == []
-    assert main.pack_teams_into_pods([[0], [1]]) == [[0, 1]]
+def check_co_president_column():
+    headers = ["Timestamp", "Are you a mentor?", "Are you a Co-President?"]
+    assert main.find_co_president_column(headers) == "Are you a Co-President?"
+    assert main.find_co_president_column(["Timestamp", "Are you a mentor?"]) is None
+    assert main.answered_yes(pd.Series(["Yes", "no", " YES ", None])).tolist() == [True, False, True, False]
 
 
-def make_pod(number, event_code, members, needs):
-    return {"number": number, "event_code": event_code, "members": members, "needs": needs}
+def check_cluster_lookup():
+    lookup = main.load_cluster_lookup(main.CLUSTER_XLSX)
+    assert lookup["EIP"] == "Entrepreneurship Events"
+    assert lookup["HTOR"] == "Business Operations Research Events"
+    assert lookup["PMCG"] == "Project Management Events"
+    assert len(set(lookup.values())) == 5
+    suffixed = main.event_abbreviation("Business Growth Plan (EBG) *Must show legal proof of business ownership*")
+    assert main.cluster_of(suffixed, "Entrepreneurship Events", lookup) == "Entrepreneurship Events"
+    assert main.cluster_of("ZZZ", "Some New Category", lookup) == "Some New Category"
+    assert main.cluster_of("", "Entrepreneurship Events", lookup) == ""
+    assert main.cluster_of("ZZZ", "I have permission from advisors to NOT do a written", lookup) == ""
 
 
-def check_mentor_assignment():
-    """Every pod gets its own mentor, nobody leads a pod full of people who have
-    been in DECA longer than they have, and the pods that need a fourth year get
-    the fourth years."""
-    mentors = pd.DataFrame(
-        {
-            "years_number": [2.0, 4.0, 4.0],
-            "event_code": ["EIP", "ESB", "EIP"],
-            "first_name": ["Ana", "Ben", "Cal"],
-            "last_name": ["A", "B", "C"],
-        },
-        index=[10, 11, 12],
+def people(rows):
+    frame = pd.DataFrame(rows, columns=["first_name", "last_name", "years_number", "event_code", "cluster"])
+    frame["mentee_email"] = (frame["first_name"] + "@x.net").str.lower()
+    frame["mentee_name_key"] = [main.name_fingerprint(f + " " + l) for f, l in zip(frame["first_name"], frame["last_name"])]
+    frame["email_name_key"] = frame["mentee_email"].str.split("@").str[0].map(main.name_fingerprint)
+    frame["partner_emails"] = [[] for _ in rows]
+    frame["partner_names"] = [[] for _ in rows]
+    return frame
+
+
+def check_build_pods():
+    mentors = people([
+        ("Ana", "A", 4.0, "EIP", "Entrepreneurship Events"),
+        ("Ben", "B", 3.0, "ESB", "Entrepreneurship Events"),
+        ("Cal", "C", 4.0, "BOR", "Business Operations Research Events"),
+    ])
+    mentors.index = [100, 101, 102]
+    mentees = people(
+        [(f"M{i}", "E", 1.0, "EIP" if i < 5 else "ESB", "Entrepreneurship Events") for i in range(10)]
+        + [(f"M{i}", "B", 2.0, "BOR", "Business Operations Research Events") for i in range(10, 16)]
+        + [("Loose", "L", 1.0, "", "")]
     )
-    pods = [
-        make_pod(1, "EIP", [0, 1], 4.0),
-        make_pod(2, "ESB", [2, 3], 4.0),
-        make_pod(3, "EIP", [4, 5], 1.0),
-    ]
-    chosen = main.assign_mentors(pods, mentors)
-    assert sorted(chosen) == [1, 2, 3]
-    assert len(set(chosen.values())) == 3
-    assert chosen[1] == 12
-    assert chosen[2] == 11
-    assert chosen[3] == 10
+    teams = [[0, 1], [2], [3], [4], [5, 6, 7], [8], [9], [10, 11], [12], [13], [14], [15], [16]]
+    mentor_links = {101: {5}}
+    pods, borrowed, idle, contested, unseated = main.build_pods(teams, mentees, mentors, mentor_links)
 
+    assert not borrowed and not idle and not contested and not unseated
+    assert sorted(member for pod in pods for member in pod["members"]) == list(range(17))
+    ben_pod = next(pod for pod in pods if pod["mentor"] == 101)
+    assert {5, 6, 7} <= set(ben_pod["members"])
+    assert ben_pod["seeded"] == [5, 6, 7]
+    for team in teams:
+        holders = [pod for pod in pods if team[0] in pod["members"]]
+        assert len(holders) == 1 and set(team) <= set(holders[0]["members"])
     for pod in pods:
-        mentor = chosen[pod["number"]]
-        assert main.clears_seniority(mentors.at[mentor, "years_number"], pod["needs"])
+        assert len(pod["members"]) <= main.HARD_SIZE
+        for member in pod["members"]:
+            assert mentees.at[member, "cluster"] in ("", pod["cluster"])
+    assert next(pod for pod in pods if pod["mentor"] == 102)["cluster"] == "Business Operations Research Events"
 
 
-def check_swaps_recover_event_matches():
-    """A pair swap has to fire when the first pass hands two mentors the wrong
-    event and trading them fixes both."""
-    mentors = pd.DataFrame(
-        {
-            "years_number": [4.0, 4.0],
-            "event_code": ["EIP", "ESB"],
-            "first_name": ["Ana", "Ben"],
-            "last_name": ["A", "B"],
-        },
-        index=[10, 11],
-    )
-    pods = [make_pod(1, "EIP", [0], 1.0), make_pod(2, "ESB", [1], 1.0)]
-    fixed = main.improve_event_matches({1: 11, 2: 10}, pods, mentors)
-    assert fixed == {1: 10, 2: 11}
+def check_build_pods_borrows_spare_mentors():
+    mentors = people([
+        ("Ana", "A", 4.0, "BOR", "Business Operations Research Events"),
+        ("Ben", "B", 4.0, "BOR", "Business Operations Research Events"),
+        ("Cal", "C", 2.0, "", ""),
+    ])
+    mentors.index = [100, 101, 102]
+    mentees = people([(f"M{i}", "E", 1.0, "EIP", "Entrepreneurship Events") for i in range(12)])
+    teams = [[i] for i in range(12)]
+    pods, borrowed, idle, contested, unseated = main.build_pods(teams, mentees, mentors, {})
+    assert len(pods) == 2
+    assert sorted(len(pod["members"]) for pod in pods) == [6, 6]
+    assert {mentor for mentor, _ in borrowed} == {102, 100}
+    assert idle == [101]
+
+
+def check_seeded_mentors_capped_by_cluster_size():
+    mentors = people([(f"A{i}", "A", 4.0, "PMBS", "Project Management Events") for i in range(4)])
+    mentors.index = [100, 101, 102, 103]
+    mentees = people([(f"M{i}", "P", 1.0, "PMBS", "Project Management Events") for i in range(5)])
+    teams = [[i] for i in range(5)]
+    links = {100: {0}, 101: {1}, 102: {2}, 103: {3}}
+    pods, borrowed, idle, contested, unseated = main.build_pods(teams, mentees, mentors, links)
+    assert len(pods) == 1 and len(pods[0]["members"]) == 5
+    assert pods[0]["mentor"] == 100 and pods[0]["seeded"] == [0]
+    assert unseated == [101, 102, 103]
 
 
 if __name__ == "__main__":
@@ -148,7 +146,9 @@ if __name__ == "__main__":
     check_event_helpers()
     check_mentor_column_is_not_the_roleplay_one()
     check_written_event_branches()
-    check_pod_packing()
-    check_mentor_assignment()
-    check_swaps_recover_event_matches()
+    check_co_president_column()
+    check_cluster_lookup()
+    check_build_pods()
+    check_build_pods_borrows_spare_mentors()
+    check_seeded_mentors_capped_by_cluster_size()
     print("All checks passed.")

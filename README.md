@@ -1,8 +1,8 @@
 # DECA mentor pod sorting
 
-> **This is not a new project.** It is a copy of [natmkk/DECA-](https://github.com/natmkk/DECA-), published here so my own contributions to it are readable in one place. The sorter was written by natmkk for our DECA chapter's mentor program. My work on it was two commits made in August 2026 on the `fix-pod-sorting` branch of the original repository, before this copy existed, so the commit history here is just the import and does not reflect when the work happened. Both commits are described under [What I contributed](#what-i-contributed), each linked to the original.
+> **This is not a new project.** It is a copy of [natmkk/DECA-](https://github.com/natmkk/DECA-), published here so my own contributions to it are readable in one place. The sorter was written by natmkk for our DECA chapter's mentor program. My first two commits were made in August 2026 on the `fix-pod-sorting` branch of the original repository, before this copy existed, so the early history here is just the import. The September 2026 rework of the pod rules was made in this copy. All of it is described under [What I contributed](#what-i-contributed).
 
-Sorts DECA mentees into mentor pods for written events. It reads the merged Google Forms export holding both mentor and mentee responses, groups mentees who signed up for the same written event while keeping declared teammates together, and gives every pod a mentor who has been in DECA at least as long as the most experienced mentee in that pod. The output is a spreadsheet an adviser can hand out.
+Sorts DECA mentees into mentor pods for written events. It reads the merged Google Forms export holding both mentor and mentee responses, gives every mentor a pod in their written event cluster, puts each mentor's own written event teammates in that pod first, keeps declared mentee teams together, and fills the remaining seats from the same cluster. The output is a spreadsheet an adviser can hand out.
 
 ## What I contributed
 
@@ -38,32 +38,52 @@ Opening the finished spreadsheet used a macOS-only call, so I made it work on Wi
 
 The commit is 961 lines added and 300 removed across `main.py` and `test_main.py`.
 
-### Rewriting the README ([7c472d1](https://github.com/natmkk/DECA-/commit/7c472d13041a11a8800aedb5f795f667fbc4bd2e))
+### Rewriting the README (August) ([7c472d1](https://github.com/natmkk/DECA-/commit/7c472d13041a11a8800aedb5f795f667fbc4bd2e))
 
 The old README described a mentor form with first and second event choices and a grade field. Neither exists in the export the repository ships, so the document read as a spec for a different program. I replaced it with how the script actually reads the form, builds pods, matches mentors, and what it warns you about at the end of a run. That text is what the rest of this file is based on.
 
+### Cluster pods, mentor teammates and co-presidents (September 2026)
+
+The chapter changed what a pod should be. A pod now belongs to a mentor rather than to a written event, and the rules run in this order. A mentor's own written event teammates go in that mentor's pod. Mentees who named each other stay together. The rest of the pod is filled from the mentor's written event cluster.
+
+That replaced the event packer and the mentor matching search with one pass that works cluster by cluster. Each cluster gets as many pods as its headcount needs at seven a pod, then any mentors left over are handed to whichever cluster has the fullest pods, as long as the average stays at five or above. Clusters short on mentors borrow from the no-written mentors first and then from clusters with spares. Within a pod the mentor's teammates are pinned, remaining teams are laid down event by event so a pod tends to hold one event, and whole teams move between pods until the sizes settle.
+
+Co-presidents are read from a new "Are you a Co-President?" column. They are dropped from both the mentor and mentee lists and never appear in the output, while the teammates they named are sorted as ordinary mentees. Teammate answers are read from mentor rows as well as mentee rows, so a link declared from either side counts.
+
+The cluster membership lives in `WrittenEventClusters.xlsx`, one row per cluster with its events listed the way the form names them, matched on the code in parentheses. That file was built from the DECA high school competitive events list and covers events the form does not currently offer, so a new branch next season needs no code change.
+
 ## How it works
 
-Mentees who named each other as written event teammates form a team, and a team is never split across pods. Matching runs on warriorlife addresses first and falls back to names, with the words sorted before comparison so "Kavya Wahlberg" and "Wahlberg, Kavya" reach the same person. Names are also checked against the local part of each address, which recovers people whose name field holds a typo. Two mentees only join up when they picked the same written event.
+Mentees who named each other as written event teammates form a team, and a team is never split across pods. Matching runs on warriorlife addresses first and falls back to names, with the words sorted before comparison so "Kavya Wahlberg" and "Wahlberg, Kavya" reach the same person. Names are also checked against the local part of each address, which recovers people whose name field holds a typo. Two mentees only join up when they picked the same written event. Teammate answers on mentor rows are read as well, so a mentor who lists a mentee, or a mentee who lists a mentor, produces the same link.
 
-Pods aim at six or seven people. For each written event the script works out how many pods that event needs, gives every pod an equal share, and moves whole teams between pods until the sizes stop getting closer together. An event too small to fill a pod pools into its event category, and the pool folds into whichever event in that category leaves the fewest empty seats.
+Every written event maps to a cluster through `WrittenEventClusters.xlsx`. An event missing from that sheet falls back to the form's "Select Written Event Category" answer.
 
-Pods are paired with mentors through an augmenting path search, with the pods needing the most experience served first, so the pods holding a fourth year get first call on the fourth year mentors. A cleanup pass then rotates mentors between pods whenever the rotation puts more of them on their own written event and no pod drops below the experience it needs.
+Pods are built one cluster at a time.
+
+1. A mentor whose written event teammates are mentees gets a pod in that cluster with those teammates in it. A mentee named by two mentors stays with the first, and the run says so.
+2. Mentee teams stay whole.
+3. The rest of the cluster's teams fill the pods. Each team goes to the pod that still has room, whose mentor has been in DECA at least as long as the team's most experienced member, that already holds the team's event, and that is furthest from its target size, in that order. Whole teams then move between pods until the sizes stop getting closer together.
+
+Each cluster gets as many pods as its headcount needs at seven per pod. Mentors left over after that are given to the cluster with the fullest pods, as long as that cluster's average stays at five or more. A cluster with more pods than mentors of its own borrows first from mentors who are not doing a written event, then from clusters with spare mentors. Mentors are ranked for a pod by whether they have teammates to lead, then by years in DECA.
+
+Co-presidents answer Yes in the "Are you a Co-President?" column. They are left out of the mentor list and the mentee list, so they get no pod and lead none, while the teammates they named are sorted like anyone else.
 
 ## What the run warns you about
 
-The end of a run prints four lists, all worth chasing before competition.
+The end of a run prints these lists, all worth chasing before competition.
 
+- Co-presidents skipped, and mentees whose named teammate is a co-president.
 - Teammates who named each other but picked different written events. One of the two lands in the wrong pod whatever the sorter does.
-- Mentees whose named teammate is a mentor. A fair number of mentors compete in written events as well as coaching, and the sorter treats them as coaches only.
+- Mentors whose written event teammate is a mentee, kept in the mentor's pod, and any mentee two mentors both claimed.
+- Mentors whose cluster is too small to give them a pod of their own, so their teammate is sorted without them.
 - Teammates named by somebody but matching no response, usually a misspelled address or a student who never filled the form in.
-- Pods carrying more than one written event, and pods whose mentor signed up for a different event than the pod.
+- Pods carrying more than one written event, pods whose mentor comes from a different cluster, pods where a mentee has more years in DECA than the mentor, and mentors left without a pod.
 
 ## Known limits
 
-The form never asks for school grade, so seniority runs entirely on Year in DECA.
+The form never asks for school grade, so seniority runs entirely on Year in DECA. Seniority is a preference during filling rather than a hard rule, and the run lists the pods where it could not be kept.
 
-Some written events have nobody volunteering to mentor them. Those pods get the best available mentor from elsewhere in the club, and the run prints how many pods that affects.
+Clusters short on mentors borrow from elsewhere in the club, and the run prints how many pods that affects.
 
 ## Running it
 
@@ -72,7 +92,9 @@ pip install pandas openpyxl
 python main.py
 ```
 
-The script reads `MentorAndMenteeResponses.csv` from its own folder, writes `MentorPodSorting.xlsx` beside it, and opens the spreadsheet. Pass `--no-open` to skip that last step.
+The script reads `MentorAndMenteeResponses.csv` and `WrittenEventClusters.xlsx` from its own folder, writes `MentorPodSorting.xlsx` beside it, and opens the spreadsheet. Pass `--no-open` to skip that last step.
+
+The export needs an "Are you a mentor?" column and, to skip co-presidents, an "Are you a Co-President?" column, both answered Yes or No. Blank rows, repeated header rows and repeat submissions from one address are dropped before sorting, and the run prints how many.
 
 `python test_main.py` runs the self checks.
 
@@ -82,16 +104,18 @@ One row per mentee, sorted by pod.
 
 | Column | Meaning |
 | --- | --- |
-| Pod | Pod number, counting up from 1 |
+| Pod | Pod number, counting up from 1, grouped by cluster |
 | Mentor First Name, Mentor Last Name | Who is running the pod |
 | Mentor Year in DECA | How long that mentor has been in DECA |
-| Mentor Event | The written event the mentor signed up for |
+| Mentor Event | The written event the mentor signed up for, blank when the mentor has advisor permission to skip a written |
+| Cluster | The written event cluster the pod belongs to |
 | Event | The written event the mentee signed up for |
 | Mentee First Name, Mentee Last Name | The mentee |
 | Years in DECA, Email, Timestamp | Carried straight through from the form |
+| Mentor's Teammate | Yes when this mentee is the mentor's own written event teammate |
 
 ## A note on the data in this repository
 
 `MentorAndMenteeResponses.csv` is generated sample data. The real form carried student names and school email addresses, which are not published here.
 
-The sample export keeps the same shape as the real one. It has the same 208 responses, the same 33 mentors, the same spread of Year in DECA answers, the same event mix across all five written branches, and the same team sizes. The messy parts were kept as well, including partners who named each other while picking different events, partners who are mentors, misspelled email domains, and names entered in a different order than the roster has them. Running the sorter against it produces 29 pods holding 175 mentees, the same counts the real export produces.
+The sample export keeps the same shape as the real one. It has the same 208 responses, the same 33 mentors, the same spread of Year in DECA answers, the same event mix across all five written branches, and the same team sizes. The messy parts were kept as well, including partners who named each other while picking different events, partners who are mentors, misspelled email domains, and names entered in a different order than the roster has them. Two mentors are marked as co-presidents so that path runs on the sample too. Running the sorter against it produces 31 pods holding 175 mentees.
