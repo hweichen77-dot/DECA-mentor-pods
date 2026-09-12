@@ -171,7 +171,9 @@ def check_mentee_level():
     levels = {"a@x.net": "Experienced"}
     assert main.mentee_level("a@x.net", 3.0, levels) == "Experienced"
     assert main.mentee_level("b@x.net", 1.0, levels) == "Novice"
-    assert main.mentee_level("b@x.net", 2.0, levels) == ""
+    assert main.mentee_level("b@x.net", 2.0, levels) == "Novice"
+    assert main.mentee_level("b@x.net", 3.0, levels) == "Experienced"
+    assert main.mentee_level("b@x.net", float("nan"), levels) == "Novice"
     assert main.load_levels(main.LEVELS_XLSX) or not main.LEVELS_XLSX.exists()
 
 

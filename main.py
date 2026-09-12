@@ -242,9 +242,9 @@ def load_levels(path):
 def mentee_level(email, years, levels):
     if email in levels:
         return levels[email]
-    if years == 1:
-        return "Novice"
-    return ""
+    if not pd.isna(years) and years >= 3:
+        return "Experienced"
+    return "Novice"
 
 
 def past_events_for(row, by_email, by_name):
@@ -809,24 +809,45 @@ def main(argv=None):
     levels = load_levels(LEVELS_XLSX)
     if not levels:
         print(f"No level sheet at {LEVELS_XLSX.name}, so Level is blank except first years.")
-    attendance = pd.DataFrame({
-        "Mentor Pod #": result["Pod"],
-        "Mentor Name(s)": (result["Mentor First Name"].astype(str) + " " + result["Mentor Last Name"].astype(str)).str.strip(),
-        "Email": result["Email"],
-        "First Name": result["Mentee First Name"],
-        "Last Name": result["Mentee Last Name"],
-        "Event": result["Event"],
-        "Status": ATTENDANCE_STATUS,
-        "Level": [
-            mentee_level(normalize_email(email), years, levels)
-            for email, years in zip(result["Email"], result["Years in DECA"].map(parse_years_in_deca))
-        ],
-    })[ATTENDANCE_COLUMNS]
-    no_level = attendance[attendance["Level"] == ""]
-    if len(no_level):
-        print(f"Returning mentees missing from {LEVELS_XLSX.name}, Level left blank: {len(no_level)}")
-        for _, row in no_level.iterrows():
-            print(f"  {row['Last Name']}, {row['First Name']} {row['Email']}")
+    attendance_rows = []
+    guessed = []
+    for pod in pods:
+        mentor_index = pod["mentor"]
+        mentor_name = "" if mentor_index is None else (
+            f"{mentors.at[mentor_index, 'first_name']} {mentors.at[mentor_index, 'last_name']}".strip()
+        )
+        if mentor_index is not None:
+            attendance_rows.append({
+                "Mentor Pod #": pod["number"],
+                "Mentor Name(s)": mentor_name,
+                "Email": mentors.at[mentor_index, email_column],
+                "First Name": mentors.at[mentor_index, "first_name"],
+                "Last Name": mentors.at[mentor_index, "last_name"],
+                "Event": mentors.at[mentor_index, "event_name"],
+                "Status": "",
+                "Level": "Experienced",
+            })
+        for member in sorted(pod["members"], key=lambda m: (mentees.at[m, "last_name"], mentees.at[m, "first_name"])):
+            person = mentees.loc[member]
+            email = normalize_email(person[email_column])
+            if email not in levels and person["years_number"] != 1:
+                guessed.append(person)
+            attendance_rows.append({
+                "Mentor Pod #": pod["number"],
+                "Mentor Name(s)": mentor_name,
+                "Email": person[email_column],
+                "First Name": person["first_name"],
+                "Last Name": person["last_name"],
+                "Event": person["event_name"],
+                "Status": ATTENDANCE_STATUS,
+                "Level": mentee_level(email, person["years_number"], levels),
+            })
+    attendance = pd.DataFrame(attendance_rows, columns=ATTENDANCE_COLUMNS)
+    if guessed:
+        print(f"Returning mentees missing from {LEVELS_XLSX.name}, Level set from Year in DECA: {len(guessed)}")
+        for person in guessed:
+            print(f"  {person['full_name']} {person[email_column]} {person[years_column]} -> "
+                  f"{mentee_level(normalize_email(person[email_column]), person['years_number'], levels)}")
     attendance.to_excel(ATTENDANCE_XLSX, index=False, engine="openpyxl")
     print(f"Wrote {len(attendance)} rows to {ATTENDANCE_XLSX}")
     if "--no-open" not in argv:

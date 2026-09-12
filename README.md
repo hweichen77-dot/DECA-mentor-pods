@@ -82,7 +82,7 @@ The end of a run prints these lists, all worth chasing before competition.
 - Mentors matched to last year's data by name rather than address, and mentors with no past record at all.
 - Mentors whose teammate is sorted without them, because the cluster is too small for another pod or because the mentor has not competed in that cluster.
 - Teammates named by somebody but matching no response, usually a misspelled address or a student who never filled the form in.
-- Returning mentees with no row in the level sheet.
+- Returning mentees with no row in the level sheet, and the level they were given from Year in DECA.
 - Pods carrying more than one written event, pods whose mentor has not competed in that cluster, pods where a mentee has more years in DECA than the mentor, and mentors left without a pod.
 
 ## Known limits
@@ -123,15 +123,15 @@ One row per mentee, sorted by pod.
 
 ### The attendance sheet
 
-`MentorPodAttendance.xlsx` is the same mentees in the layout the analytics team's attendance tracker expects, columns A through H, ready to paste in.
+`MentorPodAttendance.xlsx` is every pod in the layout the analytics team's attendance tracker expects, columns A through H, ready to paste in. Each pod starts with its mentor's own row, then the mentees.
 
 | Column | Meaning |
 | --- | --- |
 | Mentor Pod # | Pod number |
 | Mentor Name(s) | Mentor first and last name |
-| Email, First Name, Last Name, Event | The mentee, carried from the pod sheet |
-| Status | Always Compete |
-| Level | Novice or Experienced from `ExpectedExperiencedNoviceMentee.xlsx`, matched by address. First years missing from that sheet are Novice. A returning member missing from it gets a blank and the run prints the name |
+| Email, First Name, Last Name, Event | The person on that row, mentor or mentee |
+| Status | Compete for mentees, blank for mentors since they are officers |
+| Level | Mentors are Experienced. Mentees take Novice or Experienced from `ExpectedExperiencedNoviceMentee.xlsx`, matched by address. A mentee missing from that sheet is Experienced from the third year in DECA on and Novice before that, and the run prints who was filled in that way |
 
 ## A note on the data in this repository
 
