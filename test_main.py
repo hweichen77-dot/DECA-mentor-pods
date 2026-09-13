@@ -152,6 +152,17 @@ def check_one_pod_per_mentor_under_a_big_cap():
     assert sorted(len(pod["members"]) for pod in spill) == [11, 15]
 
 
+def check_mixed_event_team_stays_whole():
+    mentees = people([
+        ("Ana", "A", 1.0, "HTOR", "Business Operations Research Events"),
+        ("Ben", "B", 1.0, "HTOR", "Business Operations Research Events"),
+        ("Cal", "C", 1.0, "ESB", "Entrepreneurship Events"),
+    ])
+    assert main.team_cluster([0, 1, 2], mentees) == "Business Operations Research Events"
+    assert main.team_cluster([1, 2], mentees) == "Business Operations Research Events"
+    assert main.team_cluster([2], mentees) == "Entrepreneurship Events"
+
+
 def check_past_events_lookup():
     frame = pd.DataFrame({
         "Email Address": ["Ana.A@warriorlife.net", "ben.b@warriorlife.net", "cal.c@warriorlife.net"],
@@ -240,6 +251,17 @@ def check_one_pod_per_mentor_under_a_big_cap():
     assert sorted(len(pod["members"]) for pod in spill) == [11, 15]
 
 
+def check_mixed_event_team_stays_whole():
+    mentees = people([
+        ("Ana", "A", 1.0, "HTOR", "Business Operations Research Events"),
+        ("Ben", "B", 1.0, "HTOR", "Business Operations Research Events"),
+        ("Cal", "C", 1.0, "ESB", "Entrepreneurship Events"),
+    ])
+    assert main.team_cluster([0, 1, 2], mentees) == "Business Operations Research Events"
+    assert main.team_cluster([1, 2], mentees) == "Business Operations Research Events"
+    assert main.team_cluster([2], mentees) == "Entrepreneurship Events"
+
+
 def check_past_events_lookup():
     frame = pd.DataFrame({
         "Email Address": ["Ana.A@warriorlife.net", "ben.b@warriorlife.net", "cal.c@warriorlife.net"],
@@ -322,6 +344,7 @@ if __name__ == "__main__":
     check_build_pods_borrows_spare_mentors()
     check_every_mentor_gets_a_pod()
     check_one_pod_per_mentor_under_a_big_cap()
+    check_mixed_event_team_stays_whole()
     check_past_events_lookup()
     check_teammate_outside_past_cluster_rides_with_mentor()
     check_mentee_level()

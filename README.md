@@ -60,7 +60,7 @@ The analytics team tracks attendance in a sheet with eight fixed columns, so the
 
 ## How it works
 
-Mentees who named each other as written event teammates form a team, and a team is never split across pods. Matching runs on warriorlife addresses first and falls back to names, with the words sorted before comparison so "Kavya Wahlberg" and "Wahlberg, Kavya" reach the same person. Names are also checked against the local part of each address, which recovers people whose name field holds a typo. Two mentees only join up when they picked the same written event. Teammate answers on mentor rows are read as well, so a mentor who lists a mentee, or a mentee who lists a mentor, produces the same link.
+Mentees who named each other as written event teammates form a team, and a team is never split across pods. Matching runs on warriorlife addresses first and falls back to names, with the words sorted before comparison so "Kavya Wahlberg" and "Wahlberg, Kavya" reach the same person. Names are also checked against the local part of each address, which recovers people whose name field holds a typo. Teammates join up even when they picked different written events, and the team lands in the cluster most of its members picked, with the mismatch printed so an advisor can chase it. Teammate answers on mentor rows are read as well, so a mentor who lists a mentee, or a mentee who lists a mentor, produces the same link.
 
 Every written event maps to a cluster through `WrittenEventClusters.xlsx`. An event missing from that sheet falls back to the form's "Select Written Event Category" answer.
 
@@ -85,7 +85,7 @@ Co-presidents answer Yes in the "Are you a Co-President?" column. They are left 
 The end of a run prints these lists, all worth chasing before competition.
 
 - Co-presidents skipped, and mentees whose named teammate is a co-president.
-- Teammates who named each other but picked different written events. One of the two lands in the wrong pod whatever the sorter does.
+- Teammates who named each other but picked different written events. They stay together, so one of them is competing outside the pod's cluster.
 - Mentors whose written event teammate is a mentee, and any mentee two mentors both claimed.
 - Mentors matched to last year's data by name rather than address, and mentors with no past record at all.
 - Teammates kept in their mentor's pod even though their own event belongs to a different cluster.

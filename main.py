@@ -330,9 +330,9 @@ def build_teams(mentees, mentors, everyone, max_size=DEFAULT_MAX_SIZE):
                 mentor_links[other].add(index)
             elif other not in mentee_set:
                 officer_partners.append((index, other))
-            elif mentees.at[other, "event_code"] != row["event_code"]:
-                conflicts.add((min(index, other), max(index, other)))
             else:
+                if mentees.at[other, "event_code"] != row["event_code"]:
+                    conflicts.add((min(index, other), max(index, other)))
                 neighbours[index].add(other)
                 neighbours[other].add(index)
 
@@ -362,6 +362,14 @@ def build_teams(mentees, mentors, everyone, max_size=DEFAULT_MAX_SIZE):
 
     teams.sort(key=lambda team: (-len(team), team[0]))
     return teams, sorted(conflicts), dict(mentor_links), sorted(set(officer_partners)), missing
+
+
+def team_cluster(team, mentees):
+    votes = Counter(mentees.at[member, "cluster"] for member in team)
+    votes.pop("", None)
+    if not votes:
+        return ""
+    return min(votes, key=lambda cluster: (-votes[cluster], cluster))
 
 
 def clears_seniority(mentor_experience, needed_experience):
@@ -448,7 +456,7 @@ def build_pods(teams, mentees, mentors, all_links, max_size=DEFAULT_MAX_SIZE, ov
     team_of = {member: team for team in teams for member in team}
     teams_by_cluster = defaultdict(list)
     for team in teams:
-        teams_by_cluster[mentees.at[team[0], "cluster"]].append(team)
+        teams_by_cluster[team_cluster(team, mentees)].append(team)
     clusters = sorted(cluster for cluster in teams_by_cluster if cluster)
 
     mentor_links = {mentor: set(linked) for mentor, linked in all_links.items() if linked}
@@ -521,7 +529,7 @@ def build_pods(teams, mentees, mentors, all_links, max_size=DEFAULT_MAX_SIZE, ov
             pod = {"mentor": mentor, "cluster": cluster, "pinned": [], "teams": [], "order": len(pods)}
             for mentee in sorted(mentor_links.get(mentor, ()) if mentor is not None else ()):
                 team = team_of[mentee]
-                if mentees.at[team[0], "cluster"] != cluster:
+                if team_cluster(team, mentees) != cluster:
                     carried.append((mentor, mentee))
                 if id(team) in claimed:
                     if claimed[id(team)] is not pod:
@@ -717,7 +725,7 @@ def main(argv=None):
     print("Teams by size:", dict(sorted(team_sizes.items())))
 
     if conflicts:
-        print(f"Teammates who named each other but picked different written events: {len(conflicts)}")
+        print(f"Teammates who named each other but picked different written events, kept together in the cluster most of the team picked: {len(conflicts)}")
         for left, right in conflicts:
             print(f"  {mentees.at[left, 'full_name']} ({mentees.at[left, 'event_name']})"
                   f"  vs  {mentees.at[right, 'full_name']} ({mentees.at[right, 'event_name']})")
