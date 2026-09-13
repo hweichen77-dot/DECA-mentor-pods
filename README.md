@@ -50,7 +50,7 @@ That replaced the event packer and the mentor matching search with one pass that
 
 Co-presidents are read from a new "Are you a Co-President?" column. They are dropped from both the mentor and mentee lists and never appear in the output, while the teammates they named are sorted as ordinary mentees. Teammate answers are read from mentor rows as well as mentee rows, so a link declared from either side counts.
 
-Mentors only lead clusters they have competed in. `PreviousYearRegistrationData.csv` is the prior year's form export, and each mentor is looked up in it by warriorlife address, falling back to name when the address changed. The written event found there decides which cluster the mentor's pod belongs to, whatever they picked this year. A mentor with no past record can lead any cluster, and the run says so. When a cluster has more pods than past mentors, the extra pods borrow whoever is spare and the run lists them.
+Mentors only lead clusters they have competed in. `PreviousYearRegistrationData.csv` is the prior year's form export, and each mentor is looked up in it by warriorlife address, falling back to name when the address changed. The written event found there decides which cluster the mentor's pod belongs to, whatever they picked this year, while the mentor's own teammates come along into that pod regardless. A mentor with no past record can lead any cluster, and the run says so. When a cluster has more pods than past mentors, the extra pods borrow whoever is spare and the run lists them.
 
 The cluster membership lives in `WrittenEventClusters.xlsx`, one row per cluster with its events listed the way the form names them, matched on the code in parentheses. That file was built from the DECA high school competitive events list and covers events the form does not currently offer, so a new branch next season needs no code change.
 
@@ -64,7 +64,7 @@ Mentees who named each other as written event teammates form a team, and a team 
 
 Every written event maps to a cluster through `WrittenEventClusters.xlsx`. An event missing from that sheet falls back to the form's "Select Written Event Category" answer.
 
-A mentor's cluster comes from the written event they did last year, read from `PreviousYearRegistrationData.csv`. The lookup runs on the warriorlife address first and falls back to the name when someone registered with a different address. A mentor whose teammate this year sits in a cluster the mentor has not competed in leads a pod in their past cluster, and the teammate is sorted on their own. A mentor with no past record can lead any cluster.
+A mentor's cluster comes from the written event they did last year, read from `PreviousYearRegistrationData.csv`. The lookup runs on the warriorlife address first and falls back to the name when someone registered with a different address. A mentor's own teammates always sit in that mentor's pod, even when the teammates' event is in a different cluster from the mentor's past event, and the run lists each case. A mentor with no past record can lead any cluster.
 
 Pods are built one cluster at a time.
 
@@ -86,7 +86,7 @@ The end of a run prints these lists, all worth chasing before competition.
 - Teammates who named each other but picked different written events. One of the two lands in the wrong pod whatever the sorter does.
 - Mentors whose written event teammate is a mentee, and any mentee two mentors both claimed.
 - Mentors matched to last year's data by name rather than address, and mentors with no past record at all.
-- Mentors whose teammate is sorted without them, because the cluster is too small for another pod or because the mentor has not competed in that cluster.
+- Teammates kept in their mentor's pod even though their own event belongs to a different cluster.
 - Teammates named by somebody but matching no response, usually a misspelled address or a student who never filled the form in.
 - Returning mentees with no row in the level sheet, and the level they were given from Year in DECA.
 - Pods carrying more than one written event, pods whose mentor has not competed in that cluster, pods where a mentee has more years in DECA than the mentor, and mentors left without a pod.

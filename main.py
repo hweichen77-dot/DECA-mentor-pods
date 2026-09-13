@@ -429,12 +429,7 @@ def build_pods(teams, mentees, mentors, all_links, max_size=DEFAULT_MAX_SIZE, ov
         teams_by_cluster[mentees.at[team[0], "cluster"]].append(team)
     clusters = sorted(cluster for cluster in teams_by_cluster if cluster)
 
-    mentor_links = {}
-    for mentor_index, linked in all_links.items():
-        eligible = {mentee for mentee in linked
-                    if mentees.at[mentee, "cluster"] == mentors.at[mentor_index, "cluster"]}
-        if eligible:
-            mentor_links[mentor_index] = eligible
+    mentor_links = {mentor: set(linked) for mentor, linked in all_links.items() if linked}
 
     def mentor_cluster(mentor_index):
         return mentors.at[mentor_index, "cluster"]
@@ -492,11 +487,11 @@ def build_pods(teams, mentees, mentors, all_links, max_size=DEFAULT_MAX_SIZE, ov
         leaders[neediest].append(mentor)
         borrowed.append((mentor, neediest))
     idle_mentors = list(pool)
-    unseated = set()
 
     pods = []
     claimed = {}
     contested = []
+    carried = []
     for cluster in clusters:
         while len(leaders[cluster]) < pod_count[cluster]:
             leaders[cluster].append(None)
@@ -505,8 +500,7 @@ def build_pods(teams, mentees, mentors, all_links, max_size=DEFAULT_MAX_SIZE, ov
             for mentee in sorted(mentor_links.get(mentor, ()) if mentor is not None else ()):
                 team = team_of[mentee]
                 if mentees.at[team[0], "cluster"] != cluster:
-                    unseated.add(mentor)
-                    continue
+                    carried.append((mentor, mentee))
                 if id(team) in claimed:
                     if claimed[id(team)] is not pod:
                         contested.append((mentor, mentee, claimed[id(team)]["mentor"]))
@@ -516,7 +510,7 @@ def build_pods(teams, mentees, mentors, all_links, max_size=DEFAULT_MAX_SIZE, ov
             pods.append(pod)
 
     leading = {pod["mentor"] for pod in pods if pod["mentor"] is not None}
-    unseated = sorted(unseated | {mentor for mentor in all_links if mentor not in leading or mentor not in mentor_links})
+    unseated = sorted(mentor for mentor in mentor_links if mentor not in leading)
 
     for cluster in clusters:
         cluster_pods = [pod for pod in pods if pod["cluster"] == cluster]
@@ -546,7 +540,7 @@ def build_pods(teams, mentees, mentors, all_links, max_size=DEFAULT_MAX_SIZE, ov
     for pod in pods:
         pod["members"] = sorted(member for team in pod["pinned"] + pod["teams"] for member in team)
         pod["seeded"] = sorted(member for team in pod["pinned"] for member in team)
-    return pods, borrowed, idle_mentors, contested, unseated
+    return pods, borrowed, idle_mentors, contested, unseated, carried
 
 
 def open_when_possible(path):
@@ -723,11 +717,15 @@ def main(argv=None):
         for person_name, text in sorted(wanted):
             print(f"  {person_name} named {text}")
 
-    pods, borrowed, idle_mentors, contested, unseated = build_pods(teams, mentees, mentors, mentor_links, max_size, overflow)
+    pods, borrowed, idle_mentors, contested, unseated, carried = build_pods(teams, mentees, mentors, mentor_links, max_size, overflow)
     if unseated:
-        print(f"Mentors whose teammate is sorted without them, cluster too small or not one they have done: {len(unseated)}")
+        print(f"Mentors with teammates but no pod, teammates sorted without them: {len(unseated)}")
         for mentor in unseated:
             print(f"  {mentors.at[mentor, 'full_name']}")
+    if carried:
+        print(f"Teammates kept in their mentor's pod outside the mentee's own cluster: {len(carried)}")
+        for mentor, mentee in carried:
+            print(f"  {mentees.at[mentee, 'full_name']} ({mentees.at[mentee, 'event_name']}) with {mentors.at[mentor, 'full_name']}")
     if contested:
         print(f"Teams named by two mentors, kept with the first: {len(contested)}")
         for mentor, mentee, winner in contested:
