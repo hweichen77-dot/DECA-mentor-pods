@@ -104,7 +104,17 @@ pip install pandas openpyxl
 python main.py
 ```
 
-The script asks whether to enable overflow and what the maximum pod size should be, then reads `MentorAndMenteeResponses.csv`, `PreviousYearRegistrationData.csv`, `WrittenEventClusters.xlsx` and `ExpectedExperiencedNoviceMentee.xlsx` from its own folder, writes `MentorPodSorting.xlsx` and `MentorPodAttendance.xlsx` beside it, and opens the pod spreadsheet. Pass `--no-open` to skip that last step.
+Before it reads anything the script asks two questions. Type `y` or `n` for the first, a whole number for the second, or press Enter to take the default.
+
+```
+Enable overflow, filling each pod to the max before starting the next? [y/N]: n
+Max pod size [7]: 15
+Max pod size 15, overflow off
+```
+
+Answer `n` and every mentor leads a pod in their cluster, with mentees spread evenly under the cap. Answer `y` and each cluster opens only as many pods as fit under the cap, fills them in turn, and any mentor without a pod is listed at the end of the run. Mentorship's setting for 2026-27 is no overflow with a cap of 15.
+
+The script then reads `MentorAndMenteeResponses.csv`, `PreviousYearRegistrationData.csv`, `WrittenEventClusters.xlsx` and `ExpectedExperiencedNoviceMentee.xlsx` from its own folder, writes `MentorPodSorting.xlsx` and `MentorPodAttendance.xlsx` beside it, and opens the pod spreadsheet. Pass `--no-open` to skip that last step.
 
 The export needs an "Are you a mentor?" column and, to skip co-presidents, an "Are you a Co-President?" column, both answered Yes or No. Blank rows, repeated header rows and repeat submissions from one address are dropped before sorting, and the run prints how many.
 
