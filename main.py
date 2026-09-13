@@ -12,6 +12,7 @@ INPUT_CSV = SCRIPT_DIR / "MentorAndMenteeResponses.csv"
 CLUSTER_XLSX = SCRIPT_DIR / "WrittenEventClusters.xlsx"
 PAST_CSV = SCRIPT_DIR / "PreviousYearRegistrationData.csv"
 LEVELS_XLSX = SCRIPT_DIR / "ExpectedExperiencedNoviceMentee.xlsx"
+MANUAL_CSV = SCRIPT_DIR / "ManualPlacements.csv"
 OUTPUT_XLSX = SCRIPT_DIR / "MentorPodSorting.xlsx"
 ATTENDANCE_XLSX = SCRIPT_DIR / "MentorPodAttendance.xlsx"
 ATTENDANCE_COLUMNS = ["Mentor Pod #", "Mentor Name(s)", "Email", "First Name", "Last Name", "Event", "Status", "Level"]
@@ -222,6 +223,27 @@ def load_past_events(path):
     frame = pd.read_csv(path)
     frame.columns = frame.columns.str.strip()
     return past_events_from_frame(frame)
+
+
+def load_manual_placements(path, mentees, mentors):
+    if not path.exists():
+        return [], []
+    sheet = pd.read_csv(path)
+    sheet.columns = sheet.columns.str.strip()
+    mentee_column = find_column(sheet.columns, "mentee", default="Mentee Email")
+    mentor_column = find_column(sheet.columns, "mentor", default="Mentor Email")
+    mentee_by_email = {email: index for index, email in mentees["mentee_email"].items() if email}
+    mentor_by_email = {email: index for index, email in mentors["mentee_email"].items() if email}
+    placements = []
+    unmatched = []
+    for _, row in sheet.iterrows():
+        mentee = mentee_by_email.get(normalize_email(row[mentee_column]))
+        mentor = mentor_by_email.get(normalize_email(row[mentor_column]))
+        if mentee is None or mentor is None:
+            unmatched.append((str(row[mentee_column]), str(row[mentor_column])))
+        else:
+            placements.append((mentor, mentee))
+    return placements, unmatched
 
 
 def load_levels(path):
@@ -716,6 +738,15 @@ def main(argv=None):
         print(f"Teammates named by someone but matching no response: {len(wanted)}")
         for person_name, text in sorted(wanted):
             print(f"  {person_name} named {text}")
+
+    placements, unmatched_placements = load_manual_placements(MANUAL_CSV, mentees, mentors)
+    if placements or unmatched_placements:
+        print(f"Manual placements from {MANUAL_CSV.name}: {len(placements)} applied, {len(unmatched_placements)} unmatched")
+        for mentor, mentee in placements:
+            print(f"  {mentees.at[mentee, 'full_name']} placed with {mentors.at[mentor, 'full_name']}")
+            mentor_links.setdefault(mentor, set()).add(mentee)
+        for mentee_email, mentor_email in unmatched_placements:
+            print(f"  {mentee_email} -> {mentor_email} matches nobody in this export")
 
     pods, borrowed, idle_mentors, contested, unseated, carried = build_pods(teams, mentees, mentors, mentor_links, max_size, overflow)
     if unseated:
