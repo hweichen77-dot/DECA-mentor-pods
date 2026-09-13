@@ -66,6 +66,8 @@ Every written event maps to a cluster through `WrittenEventClusters.xlsx`. An ev
 
 A mentor's cluster comes from the written event they did last year, read from `PreviousYearRegistrationData.csv`. The lookup runs on the warriorlife address first and falls back to the name when someone registered with a different address. A mentor's own teammates always sit in that mentor's pod, even when the teammates' event is in a different cluster from the mentor's past event, and the run lists each case. A mentor with no past record can lead any cluster.
 
+`ManualPlacements.csv` holds exceptions, one row per mentee with the mentee's address and the mentor's address. Each one is pinned into that mentor's pod the same way a teammate is, and the run lists the rows it applied and any it could not match.
+
 Pods are built one cluster at a time.
 
 1. A mentor whose written event teammates are mentees gets a pod in that cluster with those teammates in it. A mentee named by two mentors stays with the first, and the run says so.
