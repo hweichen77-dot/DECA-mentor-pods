@@ -356,29 +356,15 @@ def team_experience(team, mentees):
     return pd.to_numeric(mentees.loc[team, "years_number"], errors="coerce").max()
 
 
-def pod_years(pod, mentors):
-    years = [mentors.at[mentor, "years_number"] for mentor in pod["mentors"]]
-    years = [year for year in years if not pd.isna(year)]
-    return max(years) if years else float("nan")
-
-
-def fits(pod, team, mentees, mentors):
-    if not pod["mentors"]:
-        return True
-    return clears_seniority(pod_years(pod, mentors), team_experience(team, mentees))
-
-
-def pod_events(pod, mentees, mentors):
-    held = {mentees.at[member, "event_code"] for team in pod["pinned"] + pod["teams"] for member in team}
-    for mentor in pod["mentors"]:
-        held.update(mentors.at[mentor, "past_codes"])
-    return held
-
-
 def rebalance(cluster_pods, mentees, mentors, max_size):
     if len(cluster_pods) < 2:
         return
     ideal = sum(pod_size(pod) for pod in cluster_pods) / len(cluster_pods)
+
+    def fits(pod, team):
+        if pod["mentor"] is None:
+            return True
+        return clears_seniority(mentors.at[pod["mentor"], "years_number"], team_experience(team, mentees))
 
     def spread_cost(sizes):
         return sum((size - ideal) ** 2 for size in sizes)
@@ -398,7 +384,7 @@ def rebalance(cluster_pods, mentees, mentors, max_size):
                     trial[destination_slot] += len(team)
                     if max(trial) > ceiling:
                         continue
-                    if fits(source, team, mentees, mentors) and not fits(destination, team, mentees, mentors):
+                    if fits(source, team) and not fits(destination, team):
                         continue
                     cost = spread_cost(trial)
                     event = mentees.at[team[0], "event_code"]
@@ -411,13 +397,22 @@ def rebalance(cluster_pods, mentees, mentors, max_size):
         destination["teams"].append(source["teams"].pop(position))
 
 
+def pod_events(pod, mentees, mentors):
+    held = {mentees.at[member, "event_code"] for team in pod["pinned"] + pod["teams"] for member in team}
+    if pod["mentor"] is not None:
+        held.update(mentors.at[pod["mentor"], "past_codes"])
+    return held
+
+
 def place_team(team, candidate_pods, mentees, mentors, max_size, ideal, overflow):
     needed = team_experience(team, mentees)
     event = mentees.at[team[0], "event_code"]
 
     def ranking(pod):
+        mentor = pod["mentor"]
+        mentor_years = float("nan") if mentor is None else mentors.at[mentor, "years_number"]
         over_cap = pod_size(pod) + len(team) > max_size
-        outranked = not clears_seniority(pod_years(pod, mentors), needed)
+        outranked = not clears_seniority(mentor_years, needed)
         new_event = event not in pod_events(pod, mentees, mentors)
         if overflow:
             return (over_cap, outranked, new_event, pod["order"])
@@ -441,6 +436,9 @@ def build_pods(teams, mentees, mentors, all_links, max_size=DEFAULT_MAX_SIZE, ov
         if eligible:
             mentor_links[mentor_index] = eligible
 
+    def mentor_cluster(mentor_index):
+        return mentors.at[mentor_index, "cluster"]
+
     def mentor_rank(mentor_index):
         years = mentors.at[mentor_index, "years_number"]
         return (
@@ -452,71 +450,73 @@ def build_pods(teams, mentees, mentors, all_links, max_size=DEFAULT_MAX_SIZE, ov
 
     mentors_by_cluster = defaultdict(list)
     for mentor_index in sorted(mentors.index, key=mentor_rank):
-        mentors_by_cluster[mentors.at[mentor_index, "cluster"]].append(mentor_index)
+        mentors_by_cluster[mentor_cluster(mentor_index)].append(mentor_index)
 
     people = {cluster: sum(len(team) for team in teams_by_cluster[cluster]) for cluster in clusters}
-    pod_count = {cluster: max(1, -(-people[cluster] // max_size)) for cluster in clusters}
-    if not overflow:
-        floor_average = max_size - 2
-        spare = len(mentors.index) - sum(pod_count.values())
-        while spare > 0:
-            can_grow = [cluster for cluster in clusters
-                        if people[cluster] / (pod_count[cluster] + 1) >= floor_average]
-            if not can_grow:
+    need = {cluster: max(1, -(-people[cluster] // max_size)) for cluster in clusters}
+    if overflow:
+        pod_count = dict(need)
+    else:
+        pod_count = {cluster: max(need[cluster], min(len(mentors_by_cluster[cluster]), people[cluster]))
+                     for cluster in clusters}
+        while True:
+            short = [cluster for cluster in clusters if pod_count[cluster] > len(mentors_by_cluster[cluster])]
+            spare = [cluster for cluster in clusters if pod_count[cluster] > need[cluster]
+                     and len(mentors_by_cluster[cluster]) >= pod_count[cluster]]
+            if not short or not spare:
                 break
-            fullest = max(can_grow, key=lambda cluster: (people[cluster] / pod_count[cluster], cluster))
-            pod_count[fullest] += 1
-            spare -= 1
+            if sum(pod_count.values()) <= len(mentors.index):
+                break
+            giver = min(spare, key=lambda cluster: (people[cluster] / pod_count[cluster], cluster))
+            pod_count[giver] -= 1
 
-    pods = []
+    leaders = {}
+    pool = []
+    for cluster, ranked in mentors_by_cluster.items():
+        if cluster in clusters:
+            leaders[cluster] = ranked[:pod_count[cluster]]
+            pool.extend(ranked[pod_count[cluster]:])
+        else:
+            pool.extend(ranked)
+    pool.sort(key=lambda mentor: (1 if mentors.at[mentor, "cluster"] else 0, mentor_rank(mentor)))
     for cluster in clusters:
-        for _ in range(pod_count[cluster]):
-            pods.append({"cluster": cluster, "mentors": [], "pinned": [], "teams": [], "order": len(pods)})
-
-    claimed = {}
-    unseated = set()
-
-    def emptiest(candidates):
-        return min(candidates, key=lambda pod: (len(pod["mentors"]), pod_size(pod), pod["order"]))
-
-    for cluster in clusters:
-        cluster_pods = [pod for pod in pods if pod["cluster"] == cluster]
-        for mentor in mentors_by_cluster[cluster]:
-            wanted = [team_of[mentee] for mentee in sorted(mentor_links.get(mentor, ()))]
-            if any(mentees.at[mentee, "cluster"] != cluster for mentee in all_links.get(mentor, ())):
-                unseated.add(mentor)
-            already = [claimed[id(team)] for team in wanted if id(team) in claimed]
-            pod = already[0] if already else emptiest(cluster_pods)
-            pod["mentors"].append(mentor)
-            for team in wanted:
-                if id(team) not in claimed:
-                    claimed[id(team)] = pod
-                    pod["pinned"].append(team)
+        leaders.setdefault(cluster, [])
 
     borrowed = []
-    pool = [mentor for cluster, ranked in mentors_by_cluster.items() if cluster not in clusters for mentor in ranked]
-    pool.sort(key=lambda mentor: (1 if mentors.at[mentor, "cluster"] else 0, mentor_rank(mentor)))
-    while pool and pods:
-        pod = emptiest(pods)
+    while pool:
+        short = [cluster for cluster in clusters if len(leaders[cluster]) < pod_count[cluster]]
+        if not short:
+            break
+        neediest = max(short, key=lambda cluster: people[cluster] / max(1, len(leaders[cluster])))
         mentor = pool.pop(0)
-        pod["mentors"].append(mentor)
-        if mentors.at[mentor, "cluster"]:
-            borrowed.append((mentor, pod["cluster"]))
-    for pod in pods:
-        if pod["mentors"]:
-            continue
-        donors = [other for other in pods if len(other["mentors"]) > 1]
-        if not donors:
-            continue
-        donor = max(donors, key=lambda other: (len(other["mentors"]), -other["order"]))
-        mentor = donor["mentors"].pop()
-        pod["mentors"].append(mentor)
-        borrowed.append((mentor, pod["cluster"]))
+        leaders[neediest].append(mentor)
+        borrowed.append((mentor, neediest))
+    idle_mentors = list(pool)
+    unseated = set()
 
-    for mentor in all_links:
-        if mentor not in mentor_links:
-            unseated.add(mentor)
-    unseated = sorted(unseated)
+    pods = []
+    claimed = {}
+    contested = []
+    for cluster in clusters:
+        while len(leaders[cluster]) < pod_count[cluster]:
+            leaders[cluster].append(None)
+        for mentor in leaders[cluster]:
+            pod = {"mentor": mentor, "cluster": cluster, "pinned": [], "teams": [], "order": len(pods)}
+            for mentee in sorted(mentor_links.get(mentor, ()) if mentor is not None else ()):
+                team = team_of[mentee]
+                if mentees.at[team[0], "cluster"] != cluster:
+                    unseated.add(mentor)
+                    continue
+                if id(team) in claimed:
+                    if claimed[id(team)] is not pod:
+                        contested.append((mentor, mentee, claimed[id(team)]["mentor"]))
+                    continue
+                claimed[id(team)] = pod
+                pod["pinned"].append(team)
+            pods.append(pod)
+
+    leading = {pod["mentor"] for pod in pods if pod["mentor"] is not None}
+    unseated = sorted(unseated | {mentor for mentor in all_links if mentor not in leading or mentor not in mentor_links})
 
     for cluster in clusters:
         cluster_pods = [pod for pod in pods if pod["cluster"] == cluster]
@@ -540,14 +540,13 @@ def build_pods(teams, mentees, mentors, all_links, max_size=DEFAULT_MAX_SIZE, ov
         if id(team) in claimed:
             continue
         if not pods:
-            pods.append({"cluster": "", "mentors": [], "pinned": [], "teams": [], "order": 0})
+            pods.append({"mentor": None, "cluster": "", "pinned": [], "teams": [], "order": 0})
         place_team(team, pods, mentees, mentors, max_size, max_size - 1, overflow)
 
     for pod in pods:
-        pod["mentors"].sort(key=mentor_rank)
         pod["members"] = sorted(member for team in pod["pinned"] + pod["teams"] for member in team)
         pod["seeded"] = sorted(member for team in pod["pinned"] for member in team)
-    return pods, borrowed, unseated
+    return pods, borrowed, idle_mentors, contested, unseated
 
 
 def open_when_possible(path):
@@ -724,17 +723,22 @@ def main(argv=None):
         for person_name, text in sorted(wanted):
             print(f"  {person_name} named {text}")
 
-    pods, borrowed, unseated = build_pods(teams, mentees, mentors, mentor_links, max_size, overflow)
+    pods, borrowed, idle_mentors, contested, unseated = build_pods(teams, mentees, mentors, mentor_links, max_size, overflow)
     if unseated:
-        print(f"Mentors whose teammate is sorted without them, not a cluster they have done: {len(unseated)}")
+        print(f"Mentors whose teammate is sorted without them, cluster too small or not one they have done: {len(unseated)}")
         for mentor in unseated:
             print(f"  {mentors.at[mentor, 'full_name']}")
+    if contested:
+        print(f"Teams named by two mentors, kept with the first: {len(contested)}")
+        for mentor, mentee, winner in contested:
+            print(f"  {mentees.at[mentee, 'full_name']} named by {mentors.at[mentor, 'full_name']}"
+                  f" stays with {mentors.at[winner, 'full_name']}")
 
     def pod_key(pod):
-        if not pod["mentors"]:
+        mentor = pod["mentor"]
+        if mentor is None:
             return (pod["cluster"], "~", "", pod["order"])
-        lead = pod["mentors"][0]
-        return (pod["cluster"], str(mentors.at[lead, "last_name"]), str(mentors.at[lead, "first_name"]), pod["order"])
+        return (pod["cluster"], str(mentors.at[mentor, "last_name"]), str(mentors.at[mentor, "first_name"]), pod["order"])
 
     pods = [pod for pod in pods if pod["members"]]
     pods.sort(key=pod_key)
@@ -746,27 +750,32 @@ def main(argv=None):
     outranked = []
     mentorless = []
 
-    def joined(pod, column):
-        return "; ".join(str(mentors.at[mentor, column]) for mentor in pod["mentors"])
-
     for pod in pods:
         pod_number = pod["number"]
-        if not pod["mentors"]:
+        mentor_index = pod["mentor"]
+        if mentor_index is None:
+            mentor_first = mentor_last = mentor_event = mentor_years = mentor_past = ""
             mentorless.append(pod_number)
-        if any(mentors.at[mentor, "cluster"] not in ("", pod["cluster"]) for mentor in pod["mentors"]):
-            cross_cluster.append(pod_number)
-        if pod["mentors"] and not clears_seniority(pod_years(pod, mentors), team_experience(pod["members"], mentees)):
-            outranked.append(pod_number)
+        else:
+            mentor_first = mentors.at[mentor_index, "first_name"]
+            mentor_last = mentors.at[mentor_index, "last_name"]
+            mentor_event = mentors.at[mentor_index, "event_name"]
+            mentor_past = mentors.at[mentor_index, "past_events"]
+            mentor_years = mentors.at[mentor_index, years_column]
+            if mentors.at[mentor_index, "cluster"] not in ("", pod["cluster"]):
+                cross_cluster.append(pod_number)
+            if not clears_seniority(mentors.at[mentor_index, "years_number"], team_experience(pod["members"], mentees)):
+                outranked.append(pod_number)
 
         for member in pod["members"]:
             person = mentees.loc[member]
             rows.append({
                 "Pod": pod_number,
-                "Mentor First Name": joined(pod, "first_name"),
-                "Mentor Last Name": joined(pod, "last_name"),
-                "Mentor Year in DECA": joined(pod, years_column),
-                "Mentor Event": joined(pod, "event_name"),
-                "Mentor Past Event": joined(pod, "past_events"),
+                "Mentor First Name": mentor_first,
+                "Mentor Last Name": mentor_last,
+                "Mentor Year in DECA": mentor_years,
+                "Mentor Event": mentor_event,
+                "Mentor Past Event": mentor_past,
                 "Cluster": pod["cluster"],
                 "Event": person["event_name"],
                 "Mentee First Name": person["first_name"],
@@ -790,7 +799,6 @@ def main(argv=None):
     over = [pod["number"] for pod in pods if len(pod["members"]) > max_size]
     if over:
         print(f"Pods over {max_size}: {over}")
-    print("Mentors per pod:", dict(sorted(Counter(len(pod["mentors"]) for pod in pods).items())))
     seeded_pods = sum(1 for pod in pods if pod["seeded"])
     print(f"Pods holding the mentor's own teammates: {seeded_pods}")
     for pod in pods:
@@ -804,10 +812,9 @@ def main(argv=None):
         print(f"Pods where a mentee has more years in DECA than the mentor: {len(outranked)} {outranked}")
     if mentorless:
         print(f"Pods with no mentor available: {len(mentorless)} {mentorless}")
-    placed = {mentor for pod in pods for mentor in pod["mentors"]}
-    print(f"Mentors used: {len(placed)} of {len(mentors)}")
-    if len(placed) < len(mentors):
-        print("Mentors without a pod: " + ", ".join(sorted(mentors.at[m, "full_name"] for m in mentors.index if m not in placed)))
+    print(f"Mentors used: {len(pods) - len(mentorless)} of {len(mentors)}")
+    if idle_mentors:
+        print("Mentors without a pod: " + ", ".join(sorted(mentors.at[m, "full_name"] for m in idle_mentors)))
 
     result.to_excel(OUTPUT_XLSX, index=False, engine="openpyxl")
     print(f"Wrote {len(result)} rows to {OUTPUT_XLSX}")
@@ -818,10 +825,11 @@ def main(argv=None):
     attendance_rows = []
     guessed = []
     for pod in pods:
-        mentor_name = "; ".join(
-            f"{mentors.at[mentor, 'first_name']} {mentors.at[mentor, 'last_name']}".strip() for mentor in pod["mentors"]
+        mentor_index = pod["mentor"]
+        mentor_name = "" if mentor_index is None else (
+            f"{mentors.at[mentor_index, 'first_name']} {mentors.at[mentor_index, 'last_name']}".strip()
         )
-        for mentor_index in pod["mentors"]:
+        if mentor_index is not None:
             attendance_rows.append({
                 "Mentor Pod #": pod["number"],
                 "Mentor Name(s)": mentor_name,

@@ -101,37 +101,25 @@ def check_build_pods():
         + [("Loose", "L", 1.0, "", "")]
     )
     teams = [[0, 1], [2], [3], [4], [5, 6, 7], [8], [9], [10, 11], [12], [13], [14], [15], [16]]
-    pods, borrowed, unseated = main.build_pods(teams, mentees, mentors, {101: {5}})
+    mentor_links = {101: {5}}
+    pods, borrowed, idle, contested, unseated = main.build_pods(teams, mentees, mentors, mentor_links)
 
-    assert not borrowed and not unseated
+    assert not borrowed and not idle and not contested and not unseated
     assert sorted(member for pod in pods for member in pod["members"]) == list(range(17))
-    ben_pod = holder_of(pods, 5)
-    assert 101 in ben_pod["mentors"] and ben_pod["seeded"] == [5, 6, 7]
+    ben_pod = next(pod for pod in pods if pod["mentor"] == 101)
+    assert {5, 6, 7} <= set(ben_pod["members"])
+    assert ben_pod["seeded"] == [5, 6, 7]
     for team in teams:
-        assert set(team) <= set(holder_of(pods, team[0])["members"])
+        holders = [pod for pod in pods if team[0] in pod["members"]]
+        assert len(holders) == 1 and set(team) <= set(holders[0]["members"])
     for pod in pods:
         assert len(pod["members"]) <= main.DEFAULT_MAX_SIZE
         for member in pod["members"]:
             assert mentees.at[member, "cluster"] in ("", pod["cluster"])
-    assert holder_of(pods, 12)["mentors"] == [102]
+    assert next(pod for pod in pods if pod["mentor"] == 102)["cluster"] == "Business Operations Research Events"
 
 
-def check_two_mentors_share_a_teammate_pod():
-    mentors = people([
-        ("Ana", "A", 3.0, "BOR", "Business Operations Research Events"),
-        ("Ben", "B", 3.0, "BOR", "Business Operations Research Events"),
-        ("Cal", "C", 2.0, "BOR", "Business Operations Research Events"),
-    ])
-    mentors.index = [100, 101, 102]
-    mentees = people([(f"M{i}", "B", 1.0, "BOR", "Business Operations Research Events") for i in range(12)])
-    teams = [[i] for i in range(12)]
-    pods, borrowed, unseated = main.build_pods(teams, mentees, mentors, {100: {0}, 101: {0}}, max_size=15)
-    assert len(pods) == 1
-    assert sorted(pods[0]["mentors"]) == [100, 101, 102]
-    assert pods[0]["seeded"] == [0]
-
-
-def check_build_pods_borrows_when_cluster_has_no_mentor():
+def check_build_pods_borrows_spare_mentors():
     mentors = people([
         ("Ana", "A", 4.0, "BOR", "Business Operations Research Events"),
         ("Ben", "B", 4.0, "BOR", "Business Operations Research Events"),
@@ -140,21 +128,27 @@ def check_build_pods_borrows_when_cluster_has_no_mentor():
     mentors.index = [100, 101, 102]
     mentees = people([(f"M{i}", "E", 1.0, "EIP", "Entrepreneurship Events") for i in range(12)])
     teams = [[i] for i in range(12)]
-    pods, borrowed, unseated = main.build_pods(teams, mentees, mentors, {})
+    pods, borrowed, idle, contested, unseated = main.build_pods(teams, mentees, mentors, {})
     assert len(pods) == 2
     assert sorted(len(pod["members"]) for pod in pods) == [6, 6]
-    assert all(pod["mentors"] for pod in pods)
-    assert {mentor for mentor, _ in borrowed} == {100, 101}
+    assert {mentor for mentor, _ in borrowed} == {102, 100}
+    assert idle == [101]
 
 
-def check_overflow_fills_pods_in_order():
-    mentors = people([("Ana", "A", 4.0, "EIP", "Entrepreneurship Events")])
-    mentors.index = [100]
+def check_one_pod_per_mentor_under_a_big_cap():
+    mentors = people([
+        ("Ana", "A", 4.0, "EIP", "Entrepreneurship Events"),
+        ("Ben", "B", 3.0, "EIP", "Entrepreneurship Events"),
+        ("Cal", "C", 2.0, "EIP", "Entrepreneurship Events"),
+    ])
+    mentors.index = [100, 101, 102]
     mentees = people([(f"M{i}", "E", 1.0, "EIP", "Entrepreneurship Events") for i in range(26)])
     teams = [[i] for i in range(26)]
-    even, _, _ = main.build_pods(teams, mentees, mentors, {}, max_size=15, overflow=False)
-    assert sorted(len(pod["members"]) for pod in even) == [13, 13]
-    spill, _, _ = main.build_pods(teams, mentees, mentors, {}, max_size=15, overflow=True)
+    even, borrowed, idle, contested, unseated = main.build_pods(teams, mentees, mentors, {}, max_size=15, overflow=False)
+    assert len(even) == 3 and not idle and not borrowed
+    assert sorted(len(pod["members"]) for pod in even) == [8, 9, 9]
+    spill, borrowed, idle, contested, unseated = main.build_pods(teams, mentees, mentors, {}, max_size=15, overflow=True)
+    assert len(spill) == 2 and idle == [102]
     assert sorted(len(pod["members"]) for pod in spill) == [11, 15]
 
 
@@ -189,11 +183,109 @@ def check_teammate_outside_past_cluster_is_not_pinned():
         + [(f"M{i}", "B", 1.0, "BOR", "Business Operations Research Events") for i in range(5, 10)]
     )
     teams = [[i] for i in range(10)]
-    pods, borrowed, unseated = main.build_pods(teams, mentees, mentors, {100: {0}})
-    ana_pod = next(pod for pod in pods if 100 in pod["mentors"])
+    pods, borrowed, idle, contested, unseated = main.build_pods(teams, mentees, mentors, {100: {0}})
+    ana_pod = next(pod for pod in pods if pod["mentor"] == 100)
     assert ana_pod["cluster"] == "Business Operations Research Events"
     assert 0 not in ana_pod["members"] and ana_pod["seeded"] == []
     assert unseated == [100]
+
+
+def check_mentee_level():
+    levels = {"a@x.net": "Experienced"}
+    assert main.mentee_level("a@x.net", 3.0, levels) == "Experienced"
+    assert main.mentee_level("b@x.net", 1.0, levels) == "Novice"
+    assert main.mentee_level("b@x.net", 2.0, levels) == "Novice"
+    assert main.mentee_level("b@x.net", 3.0, levels) == "Experienced"
+    assert main.mentee_level("b@x.net", float("nan"), levels) == "Novice"
+    assert main.load_levels(main.LEVELS_XLSX) or not main.LEVELS_XLSX.exists()
+
+
+def check_mentee_level():
+    levels = {"a@x.net": "Experienced"}
+    assert main.mentee_level("a@x.net", 3.0, levels) == "Experienced"
+    assert main.mentee_level("b@x.net", 1.0, levels) == "Novice"
+    assert main.mentee_level("b@x.net", 2.0, levels) == "Novice"
+    assert main.mentee_level("b@x.net", 3.0, levels) == "Experienced"
+    assert main.mentee_level("b@x.net", float("nan"), levels) == "Novice"
+    assert main.load_levels(main.LEVELS_XLSX) or not main.LEVELS_XLSX.exists()
+
+
+def check_every_mentor_gets_a_pod():
+    mentors = people([(f"A{i}", "A", 4.0, "PMBS", "Project Management Events") for i in range(4)])
+    mentors.index = [100, 101, 102, 103]
+    mentees = people([(f"M{i}", "P", 1.0, "PMBS", "Project Management Events") for i in range(5)])
+    teams = [[i] for i in range(5)]
+    links = {100: {0}, 101: {1}, 102: {2}, 103: {3}}
+    pods, borrowed, idle, contested, unseated = main.build_pods(teams, mentees, mentors, links)
+    assert len(pods) == 4 and not idle and not unseated
+    assert sorted(len(pod["members"]) for pod in pods) == [1, 1, 1, 2]
+    for mentor, wanted in links.items():
+        assert wanted <= set(next(pod for pod in pods if pod["mentor"] == mentor)["seeded"])
+
+
+def check_one_pod_per_mentor_under_a_big_cap():
+    mentors = people([
+        ("Ana", "A", 4.0, "EIP", "Entrepreneurship Events"),
+        ("Ben", "B", 3.0, "EIP", "Entrepreneurship Events"),
+        ("Cal", "C", 2.0, "EIP", "Entrepreneurship Events"),
+    ])
+    mentors.index = [100, 101, 102]
+    mentees = people([(f"M{i}", "E", 1.0, "EIP", "Entrepreneurship Events") for i in range(26)])
+    teams = [[i] for i in range(26)]
+    even, borrowed, idle, contested, unseated = main.build_pods(teams, mentees, mentors, {}, max_size=15, overflow=False)
+    assert len(even) == 3 and not idle and not borrowed
+    assert sorted(len(pod["members"]) for pod in even) == [8, 9, 9]
+    spill, borrowed, idle, contested, unseated = main.build_pods(teams, mentees, mentors, {}, max_size=15, overflow=True)
+    assert len(spill) == 2 and idle == [102]
+    assert sorted(len(pod["members"]) for pod in spill) == [11, 15]
+
+
+def check_past_events_lookup():
+    frame = pd.DataFrame({
+        "Email Address": ["Ana.A@warriorlife.net", "ben.b@warriorlife.net", "cal.c@warriorlife.net"],
+        "First Name": ["Ana", "Ben", "Cal"],
+        "Last Name": ["A", "B", "C"],
+        "Select Written Event Category": ["Entrepreneurship Events", "Business Operations Research Events", None],
+        "Select Written": [None, "Finance Operations (FOR)", None],
+        "Select Written.1": ["Innovation Plan (EIP)", None, None],
+    })
+    by_email, by_name = main.past_events_from_frame(frame)
+    assert by_email["ana.a@warriorlife.net"] == {"Innovation Plan (EIP)"}
+    assert "cal.c@warriorlife.net" not in by_email
+    row = {"mentee_email": "ana.a@warriorlife.net", "mentee_name_key": ("a", "ana")}
+    assert main.past_events_for(row, by_email, by_name) == (["Innovation Plan (EIP)"], "email")
+    row = {"mentee_email": "new.ben@warriorlife.net", "mentee_name_key": ("b", "ben")}
+    assert main.past_events_for(row, by_email, by_name) == (["Finance Operations (FOR)"], "name")
+    row = {"mentee_email": "nobody@warriorlife.net", "mentee_name_key": ("x", "y")}
+    assert main.past_events_for(row, by_email, by_name) == ([], "")
+
+
+def check_teammate_outside_past_cluster_is_not_pinned():
+    mentors = people([
+        ("Ana", "A", 4.0, "BOR", "Business Operations Research Events"),
+        ("Ben", "B", 4.0, "EIP", "Entrepreneurship Events"),
+    ])
+    mentors.index = [100, 101]
+    mentees = people(
+        [(f"M{i}", "E", 1.0, "EIP", "Entrepreneurship Events") for i in range(5)]
+        + [(f"M{i}", "B", 1.0, "BOR", "Business Operations Research Events") for i in range(5, 10)]
+    )
+    teams = [[i] for i in range(10)]
+    pods, borrowed, idle, contested, unseated = main.build_pods(teams, mentees, mentors, {100: {0}})
+    ana_pod = next(pod for pod in pods if pod["mentor"] == 100)
+    assert ana_pod["cluster"] == "Business Operations Research Events"
+    assert 0 not in ana_pod["members"] and ana_pod["seeded"] == []
+    assert unseated == [100]
+
+
+def check_mentee_level():
+    levels = {"a@x.net": "Experienced"}
+    assert main.mentee_level("a@x.net", 3.0, levels) == "Experienced"
+    assert main.mentee_level("b@x.net", 1.0, levels) == "Novice"
+    assert main.mentee_level("b@x.net", 2.0, levels) == "Novice"
+    assert main.mentee_level("b@x.net", 3.0, levels) == "Experienced"
+    assert main.mentee_level("b@x.net", float("nan"), levels) == "Novice"
+    assert main.load_levels(main.LEVELS_XLSX) or not main.LEVELS_XLSX.exists()
 
 
 def check_mentee_level():
@@ -227,9 +319,9 @@ if __name__ == "__main__":
     check_co_president_column()
     check_cluster_lookup()
     check_build_pods()
-    check_two_mentors_share_a_teammate_pod()
-    check_build_pods_borrows_when_cluster_has_no_mentor()
-    check_overflow_fills_pods_in_order()
+    check_build_pods_borrows_spare_mentors()
+    check_every_mentor_gets_a_pod()
+    check_one_pod_per_mentor_under_a_big_cap()
     check_past_events_lookup()
     check_teammate_outside_past_cluster_is_not_pinned()
     check_mentee_level()

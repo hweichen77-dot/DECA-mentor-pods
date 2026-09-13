@@ -54,7 +54,7 @@ Mentors only lead clusters they have competed in. `PreviousYearRegistrationData.
 
 The cluster membership lives in `WrittenEventClusters.xlsx`, one row per cluster with its events listed the way the form names them, matched on the code in parentheses. That file was built from the DECA high school competitive events list and covers events the form does not currently offer, so a new branch next season needs no code change.
 
-Mentorship then asked for larger pods so more of a cluster sits together. The run now asks for a maximum pod size and whether to fill pods to that maximum in turn or spread mentees evenly, and every mentor who has competed in a cluster shares that cluster's pods, so a pod of fifteen can carry three mentors.
+Mentorship then asked for larger pods so more of a cluster sits together. The run now asks for a maximum pod size and whether to fill pods to that maximum in turn or spread mentees evenly. Each mentor still leads exactly one pod, so raising the cap lets a cluster short on mentors keep its mentees together instead of borrowing a mentor from elsewhere.
 
 The analytics team tracks attendance in a sheet with eight fixed columns, so the run also writes `MentorPodAttendance.xlsx` in that layout. Each pod lists its mentor first with a blank Status, then the mentees marked Compete. Level comes from `ExpectedExperiencedNoviceMentee.xlsx` by address, and anyone missing from it is filled in from Year in DECA.
 
@@ -68,13 +68,13 @@ A mentor's cluster comes from the written event they did last year, read from `P
 
 Pods are built one cluster at a time.
 
-1. A mentor whose written event teammates are mentees gets a pod in that cluster with those teammates in it.
+1. A mentor whose written event teammates are mentees gets a pod in that cluster with those teammates in it. A mentee named by two mentors stays with the first, and the run says so.
 2. Mentee teams stay whole.
-3. The rest of the cluster's teams fill the pods. Each team goes to the pod that still has room, whose most senior mentor has been in DECA at least as long as the team's most experienced member, that already holds the team's event, and that is furthest from its target size, in that order. Whole teams then move between pods until the sizes stop getting closer together. With overflow on, the size checks drop out and pods fill in order.
+3. The rest of the cluster's teams fill the pods. Each team goes to the pod that still has room, whose mentor has been in DECA at least as long as the team's most experienced member, that already holds the team's event, and that is furthest from its target size, in that order. Whole teams then move between pods until the sizes stop getting closer together. With overflow on, the size checks drop out and pods fill in order.
 
-The run starts by asking two questions in the terminal. Whether to enable overflow, and the maximum pod size, which defaults to seven. Each cluster gets as many pods as its headcount needs at that size. With overflow off, mentors left over are used to open extra pods in the cluster with the fullest pods as long as the average stays within two of the maximum, and teams are spread so pods come out even. With overflow on, each pod fills to the maximum before the next one starts, so the last pod in a cluster holds whatever is left.
+The run starts by asking two questions in the terminal. Whether to enable overflow, and the maximum pod size, which defaults to seven. Every pod has exactly one mentor. With overflow off, each mentor who has competed in a cluster gets a pod there, so a cluster with nine mentors has nine pods however large the cap is, and teams are spread so those pods come out even. A cluster whose mentees would not fit under the cap that way takes pods, and the mentors who go with them, from the cluster whose pods are emptiest. With overflow on, each cluster has only as many pods as its headcount needs at the cap, each pod fills to the cap before the next one starts, and the mentors left over sit out and are listed.
 
-Every mentor who has competed in a cluster joins one of that cluster's pods, so a pod can have two or three mentors when the maximum is large. Mentors are ranked by whether they have teammates to lead, then by years in DECA, and two mentors who share a teammate end up in the same pod. A cluster with no mentor of its own takes one from the mentors with no past record, or from a pod that has more than one, and the run lists every pod led by a mentor outside their past cluster.
+Mentors are ranked for a pod by whether they have teammates to lead, then by years in DECA. A mentee named by two mentors stays with the first. A cluster with no mentor of its own borrows first from mentors with no past record, then from clusters with spares, and the run lists every pod led by a mentor outside their past cluster.
 
 Co-presidents answer Yes in the "Are you a Co-President?" column. They are left out of the mentor list and the mentee list, so they get no pod and lead none, while the teammates they named are sorted like anyone else.
 
@@ -84,7 +84,7 @@ The end of a run prints these lists, all worth chasing before competition.
 
 - Co-presidents skipped, and mentees whose named teammate is a co-president.
 - Teammates who named each other but picked different written events. One of the two lands in the wrong pod whatever the sorter does.
-- Mentors whose written event teammate is a mentee.
+- Mentors whose written event teammate is a mentee, and any mentee two mentors both claimed.
 - Mentors matched to last year's data by name rather than address, and mentors with no past record at all.
 - Mentors whose teammate is sorted without them, because the cluster is too small for another pod or because the mentor has not competed in that cluster.
 - Teammates named by somebody but matching no response, usually a misspelled address or a student who never filled the form in.
@@ -117,10 +117,10 @@ One row per mentee, sorted by pod.
 | Column | Meaning |
 | --- | --- |
 | Pod | Pod number, counting up from 1, grouped by cluster |
-| Mentor First Name, Mentor Last Name | Who is running the pod, separated by semicolons when a pod has more than one mentor |
-| Mentor Year in DECA | How long each mentor has been in DECA |
-| Mentor Event | The written event each mentor signed up for this year, blank when the mentor has advisor permission to skip a written |
-| Mentor Past Event | The written event each mentor competed in last year, which is what the pod's cluster is based on |
+| Mentor First Name, Mentor Last Name | Who is running the pod |
+| Mentor Year in DECA | How long that mentor has been in DECA |
+| Mentor Event | The written event the mentor signed up for this year, blank when the mentor has advisor permission to skip a written |
+| Mentor Past Event | The written event the mentor competed in last year, which is what the pod's cluster is based on |
 | Cluster | The written event cluster the pod belongs to |
 | Event | The written event the mentee signed up for |
 | Mentee First Name, Mentee Last Name | The mentee |
@@ -129,12 +129,12 @@ One row per mentee, sorted by pod.
 
 ### The attendance sheet
 
-`MentorPodAttendance.xlsx` is every pod in the layout the analytics team's attendance tracker expects, columns A through H, ready to paste in. Each pod starts with a row per mentor, then the mentees.
+`MentorPodAttendance.xlsx` is every pod in the layout the analytics team's attendance tracker expects, columns A through H, ready to paste in. Each pod starts with its mentor's own row, then the mentees.
 
 | Column | Meaning |
 | --- | --- |
 | Mentor Pod # | Pod number |
-| Mentor Name(s) | Every mentor on the pod, first and last name, separated by semicolons |
+| Mentor Name(s) | Mentor first and last name |
 | Email, First Name, Last Name, Event | The person on that row, mentor or mentee |
 | Status | Compete for mentees, blank for mentors since they are officers |
 | Level | Mentors are Experienced. Mentees take Novice or Experienced from `ExpectedExperiencedNoviceMentee.xlsx`, matched by address. A mentee missing from that sheet is Experienced from the third year in DECA on and Novice before that, and the run prints who was filled in that way |
